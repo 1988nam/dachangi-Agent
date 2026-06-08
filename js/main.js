@@ -139,7 +139,7 @@ async function _toggleEntry(item) {
     if (best && ph && !ph.dataset.loaded) {
       ph.dataset.loaded = '1';
       ph.innerHTML = '<span class="hint">🖼️ 사진 불러오는 중...</span>';
-      try { const url = await DriveAPI.fetchThumbDataUrl(best, 360); ph.innerHTML = `<img src="${url}" style="max-width:360px; width:100%; border-radius:10px; border:1px solid var(--border);" />`; }
+      try { const url = await DriveAPI.fetchThumbDataUrl(best, 1280); ph.innerHTML = `<img src="${url}" style="max-width:480px; width:100%; border-radius:10px; border:1px solid var(--border);" />`; }
       catch (_) { ph.innerHTML = '<span class="hint">사진을 불러오지 못했습니다(삭제/권한).</span>'; }
     }
   }

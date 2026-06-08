@@ -106,9 +106,43 @@ const DriveAPI = (() => {
     }
   }
 
-  // 썸네일 표시용 data URL (작게)
+  function _blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  // thumbnailLink의 크기 접미사(=s220 / =w..-h..)를 원하는 size로 교체
+  function _resizeThumbLink(link, size) {
+    if (/=s\d+(-c)?$/.test(link)) return link.replace(/=s\d+(-c)?$/, `=s${size}`);
+    if (/=w\d+-h\d+(-c)?$/.test(link)) return link.replace(/=w\d+-h\d+(-c)?$/, `=s${size}`);
+    return link + (link.indexOf('=') === -1 ? `=s${size}` : '');
+  }
+
+  // 썸네일 표시용 data URL.
+  //  1순위: 드라이브 서버 렌더 썸네일(thumbnailLink) → 포맷 무관(HEIC도 JPEG로 변환)·고화질. /api/photo 프록시 경유(CORS 회피).
+  //  2순위(폴백): 원본 다운로드 후 캔버스 다운스케일(HEIC는 PC에서 디코딩 실패 가능).
   async function fetchThumbDataUrl(fileId, maxDim) {
-    const { mime, data } = await fetchImageBase64(fileId, maxDim || 240);
+    const size = maxDim || 1024;
+    try {
+      const meta = await REST.driveGet(fileId, 'thumbnailLink');
+      if (meta && meta.thumbnailLink) {
+        const link = _resizeThumbLink(meta.thumbnailLink, size);
+        const res = await fetch(`/api/photo?url=${encodeURIComponent(link)}`, {
+          headers: { Authorization: `Bearer ${Auth.getToken()}` },
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          if ((blob.type || '').indexOf('image/') === 0) return await _blobToDataUrl(blob);
+        }
+        console.warn('[Drive] thumbnailLink 응답 비정상, 원본 폴백');
+      }
+    } catch (e) { console.warn('[Drive] thumbnailLink 실패, 원본 폴백:', e.message || e); }
+    // 폴백: 원본 → 캔버스 다운스케일
+    const { mime, data } = await fetchImageBase64(fileId, size);
     return `data:${mime};base64,${data}`;
   }
 
