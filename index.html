@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
 </head>
 <body>
 
@@ -143,6 +143,17 @@
       </div>
       <div class="field"><label>일기 작성 프롬프트(가이드)</label><textarea id="cfg-prompt" rows="5"></textarea></div>
       <div class="hint">읽기 권한(drive.readonly)으로 사진만 가져옵니다. 일기는 브라우저에 표시되며, 저장은 복사/다운로드로 합니다.</div>
+
+      <div class="field" style="border-top:1px solid var(--border); margin-top:16px; padding-top:14px;">
+        <label>📲 설정 내보내기 / 가져오기</label>
+        <div class="hint" style="margin-top:0;">다른 기기로 옮기거나 백업할 때 사용하세요. 한 줄 코드로 복사·붙여넣기됩니다.</div>
+        <textarea id="cfg-io-area" rows="3" style="font-family:monospace; font-size:11px;" placeholder="가져올 설정 코드를 여기에 붙여넣은 뒤 [설정 적용하기]를 누르세요..."></textarea>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button type="button" id="cfg-export-btn" class="btn btn-ghost" style="flex:1; padding:9px;">📤 설정 복사하기</button>
+          <button type="button" id="cfg-import-btn" class="btn btn-ghost" style="flex:1; padding:9px;">📥 설정 적용하기</button>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button id="cfg-cancel" class="btn btn-ghost">취소</button>
         <button id="cfg-save" class="btn">저장</button>
@@ -194,16 +205,16 @@
     }
   </script>
 
-  <script src="js/auth.js?v=12"></script>
-  <script src="js/gapi_rest.js?v=12"></script>
-  <script src="js/drive.js?v=12"></script>
-  <script src="js/photos_picker.js?v=12"></script>
-  <script src="js/gemini.js?v=12"></script>
-  <script src="js/diary_store.js?v=12"></script>
-  <script src="js/migrate.js?v=12"></script>
-  <script src="js/diary.js?v=12"></script>
-  <script src="js/config_modal.js?v=12"></script>
-  <script src="js/main.js?v=12"></script>
+  <script src="js/auth.js?v=13"></script>
+  <script src="js/gapi_rest.js?v=13"></script>
+  <script src="js/drive.js?v=13"></script>
+  <script src="js/photos_picker.js?v=13"></script>
+  <script src="js/gemini.js?v=13"></script>
+  <script src="js/diary_store.js?v=13"></script>
+  <script src="js/migrate.js?v=13"></script>
+  <script src="js/diary.js?v=13"></script>
+  <script src="js/config_modal.js?v=13"></script>
+  <script src="js/main.js?v=13"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

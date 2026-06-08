@@ -76,11 +76,58 @@ const ConfigModal = (() => {
     } finally { if (btn) btn.disabled = false; }
   }
 
+  // 현재 폼의 설정을 한 줄 Base64 코드로 → 클립보드 복사(다른 기기로 이동/백업)
+  function exportConfig() {
+    const config = {};
+    for (const k in FIELDS) {
+      const el = document.getElementById(FIELDS[k]);
+      if (el) config[k] = (typeof el.value === 'string') ? el.value.trim() : el.value;
+    }
+    const ob = document.getElementById('cfg-gemini-oauth');
+    config.GEMINI_USE_OAUTH = !!(ob && ob.checked);
+    try {
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(config))));
+      const area = document.getElementById('cfg-io-area');
+      if (area) { area.value = encoded; area.focus(); area.select(); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(encoded)
+          .then(() => showToast('📤 설정이 클립보드에 복사되었습니다. 다른 기기 설정창에 붙여넣으세요.'))
+          .catch(() => showToast('클립보드 복사 실패 — 아래 텍스트를 직접 복사하세요.', 'error'));
+      } else {
+        showToast('아래 텍스트를 직접 복사하세요.');
+      }
+    } catch (e) { showToast('❌ 설정 내보내기 실패: ' + (e.message || e), 'error'); }
+  }
+
+  // 붙여넣은 코드(Base64 또는 JSON)를 폼에 반영(저장은 별도 [저장] 클릭)
+  function importConfig() {
+    const area = document.getElementById('cfg-io-area');
+    const raw = ((area && area.value) || '').trim();
+    if (!raw) { showToast('가져올 설정 코드를 먼저 붙여넣으세요.', 'error'); return; }
+    try {
+      const jsonStr = raw.charAt(0) === '{' ? raw : decodeURIComponent(escape(atob(raw)));
+      const parsed = JSON.parse(jsonStr);
+      for (const k in FIELDS) {
+        if (parsed[k] === undefined) continue;
+        const el = document.getElementById(FIELDS[k]);
+        if (el) el.value = parsed[k];
+      }
+      if (parsed.GEMINI_MODEL) {
+        _ensureModelOption(parsed.GEMINI_MODEL);
+        const sel = document.getElementById('cfg-gemini-model');
+        if (sel) sel.value = parsed.GEMINI_MODEL;
+      }
+      const ob = document.getElementById('cfg-gemini-oauth');
+      if (ob && parsed.GEMINI_USE_OAUTH !== undefined) ob.checked = !!parsed.GEMINI_USE_OAUTH;
+      showToast('📥 설정을 폼에 반영했습니다. [저장]을 눌러 적용을 완료하세요.');
+    } catch (e) { showToast('❌ 설정 분석 실패 — 코드를 확인하세요: ' + (e.message || e), 'error'); }
+  }
+
   function hasValidConfig() {
     const cfg = window.DACHANGI_CONFIG || {};
     // 로그인엔 CLIENT_ID만 필요(Drive/Sheets는 OAuth Bearer로 직접 호출 → API 키 불필요)
     return !!(cfg.CLIENT_ID && cfg.CLIENT_ID.indexOf('YOUR_') !== 0);
   }
 
-  return { open, close, save, hasValidConfig, loadModels };
+  return { open, close, save, hasValidConfig, loadModels, exportConfig, importConfig };
 })();

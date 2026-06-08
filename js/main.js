@@ -224,6 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('cfg-cancel').addEventListener('click', () => ConfigModal.close());
   document.getElementById('cfg-save').addEventListener('click', () => ConfigModal.save());
   document.getElementById('cfg-load-models').addEventListener('click', () => ConfigModal.loadModels());
+  document.getElementById('cfg-export-btn').addEventListener('click', () => ConfigModal.exportConfig());
+  document.getElementById('cfg-import-btn').addEventListener('click', () => ConfigModal.importConfig());
 
   // 생성
   document.getElementById('generate-btn').addEventListener('click', _runFromUI);
