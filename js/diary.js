@@ -121,7 +121,7 @@ const DiaryAgent = (() => {
       // 포토 소스는 baseUrl 만료로 히스토리 재참조 불가 → 대표 사진 썸네일을 시트에 저장하기 위해 생성
       let bestThumb = '';
       if (source === 'photos' && topImages[0]) {
-        try { bestThumb = await _makeThumb(topImages[0], 320); } catch (_) {}
+        try { bestThumb = await _makeThumb(topImages[0], 512); } catch (_) {}
       }
 
       _last = { dateStr, topImages, diary, bestThumb };
@@ -154,20 +154,35 @@ const DiaryAgent = (() => {
     }
   }
 
-  // 메모리의 큰 사진(base64)을 작은 JPEG 썸네일 base64로 (시트 저장용)
+  // 메모리의 큰 사진(base64) → JPEG 썸네일 base64 (시트 셀 한도 안에서 화질 최대화).
+  //  시트 셀은 5만 자 한도라 maxLen(≈46000) 이하가 되도록 품질을, 그래도 크면 해상도를 단계적으로 낮춤.
   function _makeThumb(img, maxDim) {
-    maxDim = maxDim || 320;
+    maxDim = maxDim || 512;
+    const maxLen = 46000;
     return new Promise((resolve) => {
       const image = new Image();
       image.onload = () => {
         try {
-          const scale = Math.min(1, maxDim / Math.max(image.width, image.height));
-          const w = Math.max(1, Math.round(image.width * scale));
-          const h = Math.max(1, Math.round(image.height * scale));
-          const c = document.createElement('canvas');
-          c.width = w; c.height = h;
-          c.getContext('2d').drawImage(image, 0, 0, w, h);
-          resolve(c.toDataURL('image/jpeg', 0.6).split(',')[1] || '');
+          const draw = (dim) => {
+            const scale = Math.min(1, dim / Math.max(image.width, image.height));
+            const w = Math.max(1, Math.round(image.width * scale));
+            const h = Math.max(1, Math.round(image.height * scale));
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d').drawImage(image, 0, 0, w, h);
+            return c;
+          };
+          let best = '';
+          // 해상도를 512→410→328로 낮춰가며, 각 단계에서 높은 품질부터 시도해 한도 이하 중 최고 화질 선택
+          for (const dim of [maxDim, Math.round(maxDim * 0.8), Math.round(maxDim * 0.64)]) {
+            const c = draw(dim);
+            for (const q of [0.85, 0.75, 0.65, 0.55, 0.45]) {
+              const b64 = c.toDataURL('image/jpeg', q).split(',')[1] || '';
+              best = b64;
+              if (b64.length <= maxLen) { resolve(b64); return; }
+            }
+          }
+          resolve(best.length <= maxLen ? best : ''); // 끝까지 못 맞추면 저장 생략
         } catch (_) { resolve(''); }
       };
       image.onerror = () => resolve('');
