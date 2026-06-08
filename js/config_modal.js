@@ -32,6 +32,12 @@ const ConfigModal = (() => {
       const el = document.getElementById(FIELDS[k]);
       if (el) el.value = cfg[k] || '';
     }
+    // 일기 시트 ID가 비어 있으면(자동 생성분은 기기별 localStorage에만 있음) 실제 사용 중인 ID를 채워
+    //  화면에 노출 + 설정 복사 시 함께 전달되게 → 다른 기기에서 같은 시트를 쓰게 함
+    const sheetEl = document.getElementById('cfg-diary-sheet');
+    if (sheetEl && !sheetEl.value && typeof DiaryStore !== 'undefined') {
+      try { const sid = DiaryStore.currentSheetId(); if (sid) sheetEl.value = sid; } catch (_) {}
+    }
     _ensureModelOption(cfg.GEMINI_MODEL);
     const sel = document.getElementById('cfg-gemini-model');
     if (sel && cfg.GEMINI_MODEL) sel.value = cfg.GEMINI_MODEL;
