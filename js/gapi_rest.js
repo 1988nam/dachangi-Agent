@@ -20,9 +20,22 @@ const REST = (() => {
     return ct.indexOf('application/json') !== -1 ? res.json() : res.text();
   }
 
+  // 드라이브/시트 URL을 붙여넣어도 ID만 추출. 순수 ID면 그대로.
+  function extractId(s) {
+    s = String(s == null ? '' : s).trim();
+    if (!s) return '';
+    let m = s.match(/\/folders\/([a-zA-Z0-9_-]{10,})/)
+      || s.match(/\/d\/([a-zA-Z0-9_-]{10,})/)
+      || s.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+    if (m) return m[1];
+    return s; // 이미 ID 형태로 간주
+  }
+
   return {
+    extractId,
     // Drive
     driveList: (params) => _req('GET', `${DRIVE}/files?${new URLSearchParams(params).toString()}`),
+    driveGet: (id, fields) => _req('GET', `${DRIVE}/files/${id}?fields=${encodeURIComponent(fields || 'id,name,mimeType')}`),
     driveExportText: (fileId) => _req('GET', `${DRIVE}/files/${fileId}/export?mimeType=${encodeURIComponent('text/plain')}`),
     // Sheets
     sheetGet: (id, fields) => _req('GET', `${SHEETS}/spreadsheets/${id}${fields ? `?fields=${encodeURIComponent(fields)}` : ''}`),

@@ -68,15 +68,28 @@ const Migrate = (() => {
 
   async function run(progressCb) {
     const cfg = window.DACHANGI_CONFIG || {};
-    const folderId = (cfg.DIARY_FOLDER_ID || '').trim();
+    const rawFolder = (cfg.DIARY_FOLDER_ID || '').trim();
+    const folderId = REST.extractId(rawFolder);
     if (!folderId) throw new Error('설정에서 "기존 일기 문서 폴더 ID"를 입력하세요.');
+
+    // 폴더 존재/접근 검증 → 어떤 ID로 실패했는지 명확히
+    if (progressCb) progressCb(`📁 폴더 확인 중... (ID: ${folderId})`);
+    try {
+      const f = await REST.driveGet(folderId, 'id,name,mimeType');
+      if (f.mimeType !== 'application/vnd.google-apps.folder') {
+        throw new Error(`입력한 ID는 폴더가 아닙니다(${f.mimeType}). 폴더 ID를 넣어주세요.`);
+      }
+      if (progressCb) progressCb(`📁 폴더 확인됨: ${f.name}`);
+    } catch (e) {
+      throw new Error(`일기 문서 폴더를 찾을 수 없습니다. (입력값 "${rawFolder}" → ID "${folderId}")\n폴더 ID가 맞는지, 로그인한 계정에 그 폴더 접근 권한이 있는지 확인하세요.\n[원본 오류] ${e.message}`);
+    }
 
     await DiaryStore.ensureSheet();
     const docs = await _listDocs(folderId);
     if (progressCb) progressCb(`📄 일기 문서 ${docs.length}개 발견`);
     if (docs.length === 0) return { docs: 0, parsed: 0, added: 0, skipped: 0, withPhoto: 0 };
 
-    const photoMap = await _photoNameMap((cfg.BEST_PHOTO_FOLDER_ID || '').trim());
+    const photoMap = await _photoNameMap(REST.extractId(cfg.BEST_PHOTO_FOLDER_ID || ''));
 
     const all = [];
     for (let d = 0; d < docs.length; d++) {

@@ -10,7 +10,7 @@ const DiaryStore = (() => {
 
   function currentSheetId() {
     const cfg = window.DACHANGI_CONFIG || {};
-    const fromCfg = (cfg.DIARY_SHEET_ID || '').trim();
+    const fromCfg = REST.extractId(cfg.DIARY_SHEET_ID || '');
     return fromCfg || localStorage.getItem(LS_ID) || '';
   }
 

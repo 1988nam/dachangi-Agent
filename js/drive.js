@@ -4,6 +4,7 @@
 const DriveAPI = (() => {
   // 메인 폴더 안에서 'yyyy-MM' 월별 폴더 찾기
   async function findMonthFolder(mainFolderId, monthStr) {
+    mainFolderId = REST.extractId(mainFolderId);
     const res = await REST.driveList({
       q: `'${mainFolderId}' in parents and name = '${monthStr}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
       fields: 'files(id,name)',
