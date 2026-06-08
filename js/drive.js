@@ -4,12 +4,12 @@
 const DriveAPI = (() => {
   // 메인 폴더 안에서 'yyyy-MM' 월별 폴더 찾기
   async function findMonthFolder(mainFolderId, monthStr) {
-    const res = await gapi.client.drive.files.list({
+    const res = await REST.driveList({
       q: `'${mainFolderId}' in parents and name = '${monthStr}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
       fields: 'files(id,name)',
       pageSize: 10,
     });
-    const files = res.result.files || [];
+    const files = res.files || [];
     return files.length ? files[0] : null;
   }
 
@@ -18,13 +18,14 @@ const DriveAPI = (() => {
     const out = [];
     let pageToken = '';
     for (let i = 0; i < 20; i++) {
-      const res = await gapi.client.drive.files.list({
+      const params = {
         q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
         fields: 'nextPageToken, files(id,name,mimeType,size,createdTime,imageMediaMetadata(time,width,height))',
         pageSize: 1000,
-        pageToken: pageToken || undefined,
-      });
-      (res.result.files || []).forEach(f => {
+      };
+      if (pageToken) params.pageToken = pageToken;
+      const res = await REST.driveList(params);
+      (res.files || []).forEach(f => {
         const meta = f.imageMediaMetadata || {};
         out.push({
           id: f.id, name: f.name, mimeType: f.mimeType,
@@ -34,7 +35,7 @@ const DriveAPI = (() => {
           exifTime: meta.time || '',
         });
       });
-      pageToken = res.result.nextPageToken || '';
+      pageToken = res.nextPageToken || '';
       if (!pageToken) break;
     }
     return out;

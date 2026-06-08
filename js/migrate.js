@@ -7,20 +7,18 @@ const Migrate = (() => {
   async function _listDocs(folderId) {
     const out = []; let pt = '';
     for (let i = 0; i < 30; i++) {
-      const res = await gapi.client.drive.files.list({
-        q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.document' and trashed = false`,
-        fields: 'nextPageToken, files(id,name)', pageSize: 200, pageToken: pt || undefined,
-      });
-      (res.result.files || []).forEach(f => out.push(f));
-      pt = res.result.nextPageToken || ''; if (!pt) break;
+      const params = { q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.document' and trashed = false`, fields: 'nextPageToken, files(id,name)', pageSize: 200 };
+      if (pt) params.pageToken = pt;
+      const res = await REST.driveList(params);
+      (res.files || []).forEach(f => out.push(f));
+      pt = res.nextPageToken || ''; if (!pt) break;
     }
     // 이름순(yyyy-MM 일기) 정렬
     return out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
   }
 
   async function _exportText(fileId) {
-    const res = await gapi.client.drive.files.export({ fileId, mimeType: 'text/plain' });
-    return res.body || '';
+    return (await REST.driveExportText(fileId)) || '';
   }
 
   // 텍스트 → [{date, text, photoName}] (보정 포함)
@@ -58,12 +56,11 @@ const Migrate = (() => {
     try {
       let pt = '';
       for (let i = 0; i < 30; i++) {
-        const res = await gapi.client.drive.files.list({
-          q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
-          fields: 'nextPageToken, files(id,name)', pageSize: 1000, pageToken: pt || undefined,
-        });
-        (res.result.files || []).forEach(f => { if (f.name && map[f.name] === undefined) map[f.name] = f.id; });
-        pt = res.result.nextPageToken || ''; if (!pt) break;
+        const params = { q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`, fields: 'nextPageToken, files(id,name)', pageSize: 1000 };
+        if (pt) params.pageToken = pt;
+        const res = await REST.driveList(params);
+        (res.files || []).forEach(f => { if (f.name && map[f.name] === undefined) map[f.name] = f.id; });
+        pt = res.nextPageToken || ''; if (!pt) break;
       }
     } catch (e) { console.warn('[Migrate] 대표사진 맵 로드 실패:', e); }
     return map;

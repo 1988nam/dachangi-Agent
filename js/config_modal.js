@@ -77,8 +77,8 @@ const ConfigModal = (() => {
 
   function hasValidConfig() {
     const cfg = window.DACHANGI_CONFIG || {};
-    return !!(cfg.CLIENT_ID && cfg.CLIENT_ID.indexOf('YOUR_') !== 0
-      && cfg.API_KEY && cfg.API_KEY.indexOf('YOUR_') !== 0);
+    // 로그인엔 CLIENT_ID만 필요(Drive/Sheets는 OAuth Bearer로 직접 호출 → API 키 불필요)
+    return !!(cfg.CLIENT_ID && cfg.CLIENT_ID.indexOf('YOUR_') !== 0);
   }
 
   return { open, close, save, hasValidConfig, loadModels };

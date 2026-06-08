@@ -23,20 +23,12 @@ const Auth = (() => {
   }
 
   async function initGapi() {
-    const cfg = window.DACHANGI_CONFIG || {};
-    if (!cfg.API_KEY || cfg.API_KEY.indexOf('YOUR_') === 0) {
-      console.warn('[Auth] API_KEY 미설정 — 초기화 유예.'); return;
-    }
     await new Promise((resolve) => gapi.load('client', resolve));
-    await gapi.client.init({
-      apiKey: cfg.API_KEY,
-      discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-    });
-    // Sheets API는 별도 로드(실패해도 로그인·드라이브 기능은 유지; 일기 저장/이관만 제한)
-    try { await gapi.client.load('https://sheets.googleapis.com/$discovery/rest?version=v4'); }
-    catch (e) { console.warn('[Auth] Sheets API 로드 실패(일기 저장/이관 제한):', e); }
+    // 디스커버리/API키 없이 클라이언트만 초기화. 모든 Drive/Sheets 호출은 OAuth Bearer로 직접 REST(REST 헬퍼).
+    // → API 키 HTTP 리퍼러/제한과 무관하게 동작.
+    try { await gapi.client.init({}); } catch (e) { console.warn('[Auth] gapi.client.init 경고:', e); }
     gapiInited = true;
-    console.log('[Auth] GAPI 초기화 완료.');
+    console.log('[Auth] GAPI 초기화 완료(키/디스커버리 없이, REST 직접 호출).');
     _tryLocalLogin();
   }
 
