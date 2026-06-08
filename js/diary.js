@@ -126,7 +126,25 @@ const DiaryAgent = (() => {
 
       _last = { dateStr, topImages, diary, bestThumb };
       _render(dateStr, topImages, diary);
-      showToast('✅ 일기 생성 완료! (💾 시트에 저장하면 영구 보관)');
+
+      // 자동 저장 (수동 💾 버튼은 편집 후 재저장용으로 유지)
+      s = _step('💾 구글 시트에 자동 저장 중...', true);
+      try {
+        await DiaryStore.saveEntry({
+          date: dateStr,
+          text: diary.trim(),
+          bestPhotoId: (topImages[0] || {}).id || '',
+          photoIds: topImages.map(t => t.id).filter(Boolean),
+          thumb: bestThumb || '',
+        });
+        _done(s, '시트에 자동 저장 완료');
+        if (typeof renderMonthList === 'function') renderMonthList();
+        showToast('✅ 일기 생성 + 자동 저장 완료!');
+      } catch (e) {
+        console.error('[Diary] 자동 저장 실패:', e);
+        _done(s, '자동 저장 실패 — 💾 버튼으로 저장하세요');
+        showToast('일기는 생성됐지만 자동 저장 실패: ' + (e.message || e), 'error');
+      }
     } catch (e) {
       console.error('[Diary] 실패:', e);
       showToast('❌ 생성 실패: ' + (e.message || e), 'error');
