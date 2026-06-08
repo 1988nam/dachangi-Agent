@@ -265,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await DiaryStore.saveEntry({
         date: last.dateStr, text,
-        bestPhotoId: (last.topImages[0] || {}).id || '',
+        bestPhotoId: last.bestId || (last.topImages[0] || {}).id || '',
         photoIds: last.topImages.map(t => t.id).filter(Boolean),
         thumb: last.bestThumb || '',
       });

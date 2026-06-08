@@ -106,6 +106,51 @@ const DriveAPI = (() => {
     }
   }
 
+  // 앱 전용 사진 폴더 확보(없으면 생성). drive.file 권한으로 앱이 만든 폴더/파일만 다룸.
+  async function ensurePhotoFolder() {
+    const LS = 'dachangi_photo_folder_id';
+    const cached = localStorage.getItem(LS);
+    if (cached) {
+      try { await REST.driveGet(cached, 'id'); return cached; } catch (_) { localStorage.removeItem(LS); }
+    }
+    const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${Auth.getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '다챙이 일기 사진', mimeType: 'application/vnd.google-apps.folder' }),
+    });
+    if (!res.ok) throw new Error(`사진 폴더 생성 실패 (${res.status})`);
+    const j = await res.json();
+    localStorage.setItem(LS, j.id);
+    return j.id;
+  }
+
+  function _b64ToBlob(b64, mime) {
+    const chars = atob(b64);
+    const bytes = new Uint8Array(chars.length);
+    for (let i = 0; i < chars.length; i++) bytes[i] = chars.charCodeAt(i);
+    return new Blob([bytes], { type: mime || 'image/jpeg' });
+  }
+
+  // 사진(base64) → 앱 사진 폴더에 업로드 → fileId 반환 (메타 생성 후 미디어 PATCH 2단계)
+  async function uploadPhoto(name, base64, mime) {
+    const token = Auth.getToken();
+    const folderId = await ensurePhotoFolder();
+    const metaRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || '다챙이 사진.jpg', parents: [folderId], mimeType: mime || 'image/jpeg' }),
+    });
+    if (!metaRes.ok) throw new Error(`사진 파일 생성 실패 (${metaRes.status})`);
+    const { id } = await metaRes.json();
+    const upRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': mime || 'image/jpeg' },
+      body: _b64ToBlob(base64, mime),
+    });
+    if (!upRes.ok) throw new Error(`사진 업로드 실패 (${upRes.status})`);
+    return id;
+  }
+
   function _blobToDataUrl(blob) {
     return new Promise((resolve, reject) => {
       const fr = new FileReader();
@@ -146,5 +191,5 @@ const DriveAPI = (() => {
     return `data:${mime};base64,${data}`;
   }
 
-  return { findMonthFolder, listImages, filterByDate, selectByResolution, fetchImageBase64, fetchThumbDataUrl, photoDateStr };
+  return { findMonthFolder, listImages, filterByDate, selectByResolution, fetchImageBase64, fetchThumbDataUrl, photoDateStr, uploadPhoto, ensurePhotoFolder };
 })();

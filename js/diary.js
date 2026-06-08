@@ -71,7 +71,7 @@ const DiaryAgent = (() => {
     for (let i = 0; i < capped.length; i++) {
       const it = capped[i];
       const img = await PhotosPicker.fetchImageBase64(it.baseUrl, 1024);
-      out.push({ ...img, name: it.filename || '', id: '' });
+      out.push({ ...img, name: it.filename || '', id: '', baseUrl: it.baseUrl }); // baseUrl 보존(저장 시 고화질 재취득용)
       if (s) s.querySelector('span:last-child').textContent = `⬇️ 선택한 사진 불러오는 중... (${i + 1}/${capped.length})`;
     }
     _done(s, `${out.length}장 로드 완료`);
@@ -118,13 +118,28 @@ const DiaryAgent = (() => {
       if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); return; }
       _done(s, '일기 작성 완료');
 
-      // 포토 소스는 baseUrl 만료로 히스토리 재참조 불가 → 대표 사진 썸네일을 시트에 저장하기 위해 생성
+      // 대표 사진을 영구·고화질로 보관:
+      //  - 포토 소스: baseUrl이 만료되므로, 고해상도(2048)로 재취득해 드라이브에 업로드 → 영구 fileId 확보.
+      //    실패하면 시트 썸네일(저화질)로 폴백.
+      //  - 드라이브 소스: 이미 영구 fileId(topImages[0].id)가 있으므로 그대로 사용.
       let bestThumb = '';
+      let bestId = (topImages[0] || {}).id || '';
       if (source === 'photos' && topImages[0]) {
-        try { bestThumb = await _makeThumb(topImages[0], 512); } catch (_) {}
+        const rep = topImages[0];
+        s = _step('☁️ 대표 사진 고화질로 드라이브에 저장 중...', true);
+        try {
+          const hi = rep.baseUrl ? await PhotosPicker.fetchImageBase64(rep.baseUrl, 2048) : { mime: rep.mime, data: rep.data };
+          bestId = await DriveAPI.uploadPhoto(`${dateStr} 대표.jpg`, hi.data, hi.mime);
+          _done(s, '드라이브에 고화질 저장 완료');
+        } catch (e) {
+          console.warn('[Diary] 드라이브 사진 업로드 실패, 시트 썸네일 폴백:', e);
+          _done(s, '드라이브 저장 실패 — 시트 썸네일로 대체');
+          bestId = '';
+          try { bestThumb = await _makeThumb(rep, 512); } catch (_) {}
+        }
       }
 
-      _last = { dateStr, topImages, diary, bestThumb };
+      _last = { dateStr, topImages, diary, bestThumb, bestId };
       _render(dateStr, topImages, diary);
 
       // 자동 저장 (수동 💾 버튼은 편집 후 재저장용으로 유지)
@@ -133,7 +148,7 @@ const DiaryAgent = (() => {
         await DiaryStore.saveEntry({
           date: dateStr,
           text: diary.trim(),
-          bestPhotoId: (topImages[0] || {}).id || '',
+          bestPhotoId: bestId || (topImages[0] || {}).id || '',
           photoIds: topImages.map(t => t.id).filter(Boolean),
           thumb: bestThumb || '',
         });
