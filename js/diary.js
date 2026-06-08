@@ -164,7 +164,8 @@ const DiaryAgent = (() => {
       `<img src="data:${im.mime};base64,${im.data}" class="${i === 0 ? 'best' : ''}" title="${i === 0 ? '대표 사진' : ''} ${im.name || ''}" />`
     ).join('');
     document.getElementById('diary-text').value = diary.trim();
-    document.getElementById('result-card').style.display = '';
+    // CSS에 #result-card{display:none}이 있어 ''로 두면 다시 숨겨짐 → 'block'으로 명시해야 저장 버튼이 보임
+    document.getElementById('result-card').style.display = 'block';
     document.getElementById('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
