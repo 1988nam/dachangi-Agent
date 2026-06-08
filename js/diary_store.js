@@ -118,6 +118,22 @@ const DiaryStore = (() => {
     return { row: idx + 2 };
   }
 
+  // 날짜 + 본문 수정. 새 날짜가 다른 일기와 겹치면 거부.
+  async function updateEntry(oldDate, newDate, text) {
+    const sid = await ensureSheet();
+    const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
+    const dates = (res.values || []).map(r => r[0]);
+    const idx = dates.indexOf(oldDate);
+    if (idx === -1) throw new Error('해당 날짜의 일기를 찾을 수 없습니다.');
+    newDate = (newDate || oldDate).trim();
+    if (newDate !== oldDate && dates.indexOf(newDate) !== -1) {
+      throw new Error(`이미 ${newDate} 일기가 있습니다. 다른 날짜를 쓰거나 기존 일기를 먼저 지우세요.`);
+    }
+    const row = idx + 2;
+    await REST.valuesUpdate(sid, `${TAB}!A${row}:B${row}`, [[newDate, (text || '').slice(0, 45000)]]);
+    return { row, date: newDate };
+  }
+
   // 일기 한 줄 삭제
   async function deleteByDate(date) {
     const sid = await ensureSheet();
@@ -132,5 +148,5 @@ const DiaryStore = (() => {
     return { deleted: date };
   }
 
-  return { ensureSheet, loadEntries, saveEntry, bulkAppend, currentSheetId, updateText, deleteByDate };
+  return { ensureSheet, loadEntries, saveEntry, bulkAppend, currentSheetId, updateText, updateEntry, deleteByDate };
 })();

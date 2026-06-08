@@ -192,7 +192,15 @@ function _enterEditMode(item, date) {
   const body = item.querySelector('.hist-body');
   const actions = item.querySelector('.hist-actions');
   const text = entry ? entry.text : (body ? body.textContent : '');
-  if (body) { body.innerHTML = `<textarea class="hist-edit-area" style="width:100%; min-height:200px;">${_esc(text)}</textarea>`; body.style.whiteSpace = 'normal'; }
+  if (body) {
+    body.innerHTML =
+      `<div class="field" style="margin-bottom:8px;">
+        <label style="font-size:12px; color:var(--text-muted);">날짜</label>
+        <input type="date" class="hist-edit-date" value="${_esc(date)}" style="width:170px;" />
+      </div>
+      <textarea class="hist-edit-area" style="width:100%; min-height:200px;">${_esc(text)}</textarea>`;
+    body.style.whiteSpace = 'normal';
+  }
   if (actions) actions.innerHTML = `<button class="btn hist-save" style="padding:6px 12px;">💾 저장</button><button class="btn btn-ghost hist-cancel" style="padding:6px 12px;">취소</button>`;
 }
 function _renderViewMode(item, date) {
@@ -207,14 +215,23 @@ async function _saveEdit(item, date) {
   const area = item.querySelector('.hist-edit-area');
   if (!area) return;
   const newText = area.value;
+  const dateEl = item.querySelector('.hist-edit-date');
+  const newDate = dateEl ? dateEl.value.trim() : date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) { showToast('날짜를 올바르게 선택하세요.', 'error'); return; }
   const saveBtn = item.querySelector('.hist-save'); const o = saveBtn ? saveBtn.textContent : '';
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중...'; }
   try {
-    await DiaryStore.updateText(date, newText);
-    const entry = _entriesCache.find(e => e.date === date);
-    if (entry) entry.text = newText;
-    _renderViewMode(item, date);
-    showToast('✅ 일기가 수정되었습니다.');
+    await DiaryStore.updateEntry(date, newDate, newText);
+    if (newDate !== date) {
+      showToast('✅ 날짜·내용이 수정되었습니다.');
+      await renderMonthList();   // 날짜 변경 → 목록/달 그룹 재구성
+      showDate(newDate);
+    } else {
+      const entry = _entriesCache.find(e => e.date === date);
+      if (entry) entry.text = newText;
+      _renderViewMode(item, date);
+      showToast('✅ 일기가 수정되었습니다.');
+    }
   } catch (e) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = o; }
     showToast('수정 실패: ' + (e.message || e), 'error');
