@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=9" />
+  <link rel="stylesheet" href="style.css?v=10" />
 </head>
 <body>
 
@@ -124,7 +124,15 @@
         </div>
         <div class="hint" id="cfg-models-status"></div>
       </div>
-      <div class="field"><label>사진 메인 폴더 ID (안에 <code>yyyy-MM</code> 월별 폴더가 있는 폴더)</label><input type="text" id="cfg-main-folder" placeholder="드라이브 폴더 ID" /></div>
+      <div class="field">
+        <label>사진 소스</label>
+        <select id="cfg-photo-source">
+          <option value="photos">📷 구글 포토에서 직접 선택 (권장 · 드라이브 설정 불필요)</option>
+          <option value="drive">📁 구글 드라이브 폴더 (yyyy-MM 자동수집)</option>
+        </select>
+        <div class="hint">'구글 포토'는 드라이브 자동업로드 없이 포토 창에서 바로 고릅니다. 단, 포토 사진은 만료 주소라서 <b>저장된 일기 히스토리의 썸네일은 보관되지 않습니다</b>(텍스트는 영구 보관). '드라이브'는 기존 방식(yyyy-MM 폴더의 그 날짜 사진 자동수집).</div>
+      </div>
+      <div class="field"><label>사진 메인 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(드라이브 소스일 때만)</span> (안에 <code>yyyy-MM</code> 월별 폴더가 있는 폴더)</label><input type="text" id="cfg-main-folder" placeholder="드라이브 폴더 ID" /></div>
       <div class="field"><label>일기 저장 시트 ID <span style="color:var(--text-muted); font-size:11px;">(비우면 자동 생성)</span></label><input type="text" id="cfg-diary-sheet" placeholder="비우면 '다챙이 일기 DB' 시트를 자동 생성" /></div>
       <div class="field"><label>기존 일기 문서 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(이관용)</span></label><input type="text" id="cfg-diary-folder" placeholder="GAS 일기 문서(yyyy-MM 일기)들이 있는 드라이브 폴더 ID" /></div>
       <div class="field"><label>대표 사진 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(선택, 이관 시 사진 매칭)</span></label><input type="text" id="cfg-best-folder" placeholder="대표 사진들이 저장된 폴더 ID" /></div>
@@ -151,11 +159,12 @@
       CLIENT_ID: '', API_KEY: '', GEMINI_API_KEY: '',
       GEMINI_MODEL: 'gemini-2.5-flash',
       GEMINI_USE_OAUTH: false,
+      PHOTO_SOURCE: 'photos',
       MAIN_PHOTO_FOLDER_ID: '',
       DIARY_SHEET_ID: '',
       DIARY_FOLDER_ID: '',
       BEST_PHOTO_FOLDER_ID: '',
-      SCOPES: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
+      SCOPES: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
       DIARY_PROMPT: [
         '너는 사용자의 하루를 따뜻하고 담백하게 기록하는 일기 작가야.',
         '첨부된 사진들({{DATE}})을 종합해서 그날 하루의 일기를 한국어로 자연스럽게 써줘.',
@@ -185,15 +194,16 @@
     }
   </script>
 
-  <script src="js/auth.js?v=9"></script>
-  <script src="js/gapi_rest.js?v=9"></script>
-  <script src="js/drive.js?v=9"></script>
-  <script src="js/gemini.js?v=9"></script>
-  <script src="js/diary_store.js?v=9"></script>
-  <script src="js/migrate.js?v=9"></script>
-  <script src="js/diary.js?v=9"></script>
-  <script src="js/config_modal.js?v=9"></script>
-  <script src="js/main.js?v=9"></script>
+  <script src="js/auth.js?v=10"></script>
+  <script src="js/gapi_rest.js?v=10"></script>
+  <script src="js/drive.js?v=10"></script>
+  <script src="js/photos_picker.js?v=10"></script>
+  <script src="js/gemini.js?v=10"></script>
+  <script src="js/diary_store.js?v=10"></script>
+  <script src="js/migrate.js?v=10"></script>
+  <script src="js/diary.js?v=10"></script>
+  <script src="js/config_modal.js?v=10"></script>
+  <script src="js/main.js?v=10"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

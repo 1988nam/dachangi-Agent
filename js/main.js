@@ -26,9 +26,15 @@ function onLoginSuccess(user) {
   document.getElementById('user-name').textContent = user?.name || '';
   const cfg = window.DACHANGI_CONFIG || {};
   const hint = document.getElementById('folder-hint');
-  if (hint) hint.innerHTML = cfg.MAIN_PHOTO_FOLDER_ID
-    ? `메인 폴더 안의 <code>${'{yyyy-MM}'}</code> 폴더에서 선택한 날짜의 사진을 찾습니다.`
-    : '⚠️ 설정에서 <b>사진 메인 폴더 ID</b>를 먼저 입력하세요.';
+  if (hint) {
+    if ((cfg.PHOTO_SOURCE || 'photos') === 'photos') {
+      hint.innerHTML = '📷 <b>구글 포토</b>에서 직접 사진을 골라 일기를 만듭니다. <code>✍️ 일기 생성</code>을 누르면 포토 선택 창이 열립니다(드라이브 설정 불필요).';
+    } else {
+      hint.innerHTML = cfg.MAIN_PHOTO_FOLDER_ID
+        ? `메인 폴더 안의 <code>${'{yyyy-MM}'}</code> 폴더에서 선택한 날짜의 사진을 찾습니다.`
+        : '⚠️ 설정에서 <b>사진 메인 폴더 ID</b>를 먼저 입력하세요.';
+    }
+  }
   showWrite();
   renderMonthList();
 }

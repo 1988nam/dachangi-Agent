@@ -8,6 +8,7 @@ const ConfigModal = (() => {
     API_KEY: 'cfg-api-key',
     GEMINI_API_KEY: 'cfg-gemini-key',
     GEMINI_MODEL: 'cfg-gemini-model',
+    PHOTO_SOURCE: 'cfg-photo-source',
     MAIN_PHOTO_FOLDER_ID: 'cfg-main-folder',
     DIARY_SHEET_ID: 'cfg-diary-sheet',
     DIARY_FOLDER_ID: 'cfg-diary-folder',
