@@ -95,6 +95,8 @@ const PhotosPicker = (() => {
   }
 
   // 전체 흐름: 세션 생성 → 포토 창 열기 → 선택 폴링 → 선택 항목 반환
+  //  주의: 선택이 끝나기 전엔 세션을 절대 삭제하지 않는다(삭제하면 포토가 "다시 연결하세요" 에러).
+  //  창 닫힘(win.closed)은 모바일에서 오판이 잦아 취소 근거로 쓰지 않고, 오직 mediaItemsSet/타임아웃으로 판단.
   async function pick(onProgress) {
     const log = onProgress || (() => {});
     // 팝업은 사용자 제스처 직후 동기로 먼저 열어 차단을 피한다(이후 location만 교체).
@@ -104,7 +106,7 @@ const PhotosPicker = (() => {
       log('📷 포토 세션 생성 중...');
       session = await createSession();
     } catch (e) {
-      if (win) win.close();
+      if (win) { try { win.close(); } catch (_) {} }
       throw e;
     }
     if (win) { try { win.location.href = session.pickerUri; } catch (_) {} }
@@ -113,25 +115,27 @@ const PhotosPicker = (() => {
     const interval = Math.max(1500, _secs(session.pollingConfig && session.pollingConfig.pollInterval, 3000));
     const timeout = Math.min(_secs(session.pollingConfig && session.pollingConfig.timeoutIn, 300000), 600000);
     const start = Date.now();
-    log('🖼️ 포토 창에서 사진을 선택하세요...');
+    log('🖼️ 포토 창에서 사진을 고르고 "완료"를 누른 뒤, 이 화면으로 돌아오세요...');
+
+    let done = false;
+    while (Date.now() - start <= timeout) {
+      await new Promise(r => setTimeout(r, interval));
+      let st = null;
+      try { st = await getSession(session.id); } catch (_) { continue; } // 일시 오류는 계속 폴링
+      if (st && st.mediaItemsSet) { done = true; break; }
+    }
+
+    if (win && !win.closed) { try { win.close(); } catch (_) {} }
+    if (!done) {
+      deleteSession(session.id); // 타임아웃: 사용자가 끝내지 않았으므로 정리해도 안전
+      throw new Error('시간 초과 — 사진을 고른 뒤 "완료"를 눌렀는지, 이 화면으로 돌아왔는지 확인하세요.');
+    }
+
+    log('✅ 선택 완료, 목록 불러오는 중...');
     try {
-      while (true) {
-        await new Promise(r => setTimeout(r, interval));
-        if (Date.now() - start > timeout) throw new Error('시간 초과 — 다시 시도하세요.');
-        let st = null;
-        try { st = await getSession(session.id); } catch (_) { continue; }
-        if (st.mediaItemsSet) break;
-        if (win && win.closed) {
-          const chk = await getSession(session.id).catch(() => null);
-          if (chk && chk.mediaItemsSet) break;
-          throw new Error('선택이 취소되었습니다.');
-        }
-      }
-      log('✅ 선택 완료, 목록 불러오는 중...');
       return await listMediaItems(session.id);
     } finally {
-      if (win && !win.closed) { try { win.close(); } catch (_) {} }
-      deleteSession(session.id);
+      deleteSession(session.id); // 목록 수신 후에만 삭제
     }
   }
 
