@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=25" />
+  <link rel="stylesheet" href="style.css?v=26" />
 </head>
 <body>
 
@@ -72,11 +72,11 @@
 
           <div class="card" id="result-card">
             <div class="card-title">📖 생성된 일기 <span id="result-date" class="diary-meta" style="margin-left:8px;"></span></div>
-            <div class="diary-meta">선정된 사진 (보라 테두리 = 대표 사진)</div>
+            <div class="diary-meta">선정된 사진 — <b>대표로 쓸 사진을 클릭해 고르세요</b> (보라 테두리 = 대표). 일기 내용도 아래에서 수정할 수 있어요.</div>
             <div class="photo-strip" id="photo-strip"></div>
             <textarea id="diary-text" placeholder="일기가 여기에 표시됩니다."></textarea>
             <div class="modal-actions" style="justify-content:flex-start; flex-wrap:wrap;">
-              <button id="save-diary-btn" class="btn">💾 시트에 저장</button>
+              <button id="save-diary-btn" class="btn">💾 수정·대표사진 반영 등록</button>
               <button id="copy-btn" class="btn btn-ghost">📋 복사</button>
               <button id="download-btn" class="btn btn-ghost">⬇️ .txt 다운로드</button>
               <button id="regenerate-btn" class="btn btn-ghost">🔄 다시 생성</button>
@@ -228,17 +228,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=25"></script>
-  <script src="js/gapi_rest.js?v=25"></script>
-  <script src="js/drive.js?v=25"></script>
-  <script src="js/photos_picker.js?v=25"></script>
-  <script src="js/gemini.js?v=25"></script>
-  <script src="js/diary_store.js?v=25"></script>
-  <script src="js/people_store.js?v=25"></script>
-  <script src="js/migrate.js?v=25"></script>
-  <script src="js/diary.js?v=25"></script>
-  <script src="js/config_modal.js?v=25"></script>
-  <script src="js/main.js?v=25"></script>
+  <script src="js/auth.js?v=26"></script>
+  <script src="js/gapi_rest.js?v=26"></script>
+  <script src="js/drive.js?v=26"></script>
+  <script src="js/photos_picker.js?v=26"></script>
+  <script src="js/gemini.js?v=26"></script>
+  <script src="js/diary_store.js?v=26"></script>
+  <script src="js/people_store.js?v=26"></script>
+  <script src="js/migrate.js?v=26"></script>
+  <script src="js/diary.js?v=26"></script>
+  <script src="js/config_modal.js?v=26"></script>
+  <script src="js/main.js?v=26"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

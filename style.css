@@ -118,7 +118,8 @@ textarea { width: 100%; resize: vertical; line-height: 1.7; }
 #result-card { display: none; }
 .diary-meta { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
 .photo-strip { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 14px; }
-.photo-strip img { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); }
+.photo-strip img { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); cursor: pointer; transition: outline 0.12s; }
+.photo-strip img:hover { outline: 2px solid var(--text-muted); }
 .photo-strip img.best { outline: 3px solid var(--accent); }
 #diary-text { min-height: 280px; font-size: 14.5px; }
 

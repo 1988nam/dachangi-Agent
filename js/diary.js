@@ -122,10 +122,12 @@ const DiaryAgent = (() => {
       if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); return; }
       _done(s, '일기 작성 완료');
 
-      // 대표 사진을 영구·고화질로 보관:
-      //  - 포토 소스: baseUrl이 만료되므로, 고해상도(2048)로 재취득해 드라이브에 업로드 → 영구 fileId 확보.
-      //    실패하면 시트 썸네일(저화질)로 폴백.
-      //  - 드라이브 소스: 이미 영구 fileId(topImages[0].id)가 있으므로 그대로 사용.
+      // 사용자가 대표 사진을 직접 고를 수 있도록 후보 전체를 보관(기본 대표 = Gemini 1순위)
+      const allImages = candImages;
+      const repDefaultIdx = Math.max(0, allImages.indexOf(topImages[0]));
+      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, _uploadCache: {}, bestId: '', bestThumb: '' };
+
+      // 기본 대표 사진을 영구·고화질로 보관(포토=드라이브 업로드, 실패 시 시트 썸네일 폴백)
       let bestThumb = '';
       let bestId = (topImages[0] || {}).id || '';
       if (source === 'photos' && topImages[0]) {
@@ -134,6 +136,7 @@ const DiaryAgent = (() => {
         try {
           const hi = rep.baseUrl ? await PhotosPicker.fetchImageBase64(rep.baseUrl, 2048) : { mime: rep.mime, data: rep.data };
           bestId = await DriveAPI.uploadPhoto(`${dateStr} 대표.jpg`, hi.data, hi.mime);
+          _last._uploadCache[repDefaultIdx] = bestId;
           _done(s, '드라이브에 고화질 저장 완료');
         } catch (e) {
           console.warn('[Diary] 드라이브 사진 업로드 실패, 시트 썸네일 폴백:', e);
@@ -142,11 +145,12 @@ const DiaryAgent = (() => {
           try { bestThumb = await _makeThumb(rep, 512); } catch (_) {}
         }
       }
+      _last.bestId = bestId;
+      _last.bestThumb = bestThumb;
 
-      _last = { dateStr, topImages, diary, bestThumb, bestId };
-      _render(dateStr, topImages, diary);
+      _render(dateStr, allImages, repDefaultIdx, diary);
 
-      // 자동 저장 (수동 💾 버튼은 편집 후 재저장용으로 유지)
+      // 자동 저장 (이후 결과 카드에서 텍스트 수정·대표 사진 변경 후 💾로 재등록 가능)
       s = _step('💾 구글 시트에 자동 저장 중...', true);
       try {
         await DiaryStore.saveEntry({
@@ -261,19 +265,64 @@ const DiaryAgent = (() => {
     }
   }
 
-  function _render(dateStr, topImages, diary) {
+  function _render(dateStr, images, bestIdx, diary) {
     document.getElementById('result-date').textContent = `· ${dateStr}`;
     const strip = document.getElementById('photo-strip');
-    strip.innerHTML = topImages.map((im, i) =>
-      `<img src="data:${im.mime};base64,${im.data}" class="${i === 0 ? 'best' : ''}" title="${i === 0 ? '대표 사진' : ''} ${im.name || ''}" />`
+    strip.innerHTML = images.map((im, i) =>
+      `<img src="data:${im.mime};base64,${im.data}" data-idx="${i}" class="${i === bestIdx ? 'best' : ''}" title="${_escAttr(im.name || '')}" />`
     ).join('');
+    strip.querySelectorAll('img').forEach(im => im.addEventListener('click', () => {
+      const idx = parseInt(im.dataset.idx, 10);
+      setBestIndex(idx);
+      strip.querySelectorAll('img').forEach(x => x.classList.toggle('best', parseInt(x.dataset.idx, 10) === idx));
+    }));
     document.getElementById('diary-text').value = diary.trim();
     // CSS에 #result-card{display:none}이 있어 ''로 두면 다시 숨겨짐 → 'block'으로 명시해야 저장 버튼이 보임
     document.getElementById('result-card').style.display = 'block';
     document.getElementById('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function getLast() { return _last; }
+  function _escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 
-  return { run, getLast };
+  function getLast() { return _last; }
+  function setBestIndex(i) { if (_last) _last.bestIndex = i; }
+
+  // 결과 카드의 수정 텍스트 + 선택한 대표 사진으로 최종 등록(같은 날짜 덮어쓰기)
+  async function finalize(text) {
+    if (!_last) throw new Error('생성된 일기가 없습니다.');
+    const { dateStr, allImages, topImages, source } = _last;
+    const idx = _last.bestIndex || 0;
+    const rep = allImages[idx];
+    let bestId = '';
+    let thumb = '';
+    if (source === 'photos') {
+      if (_last._uploadCache[idx]) {
+        bestId = _last._uploadCache[idx]; // 이미 업로드한 후보면 재사용
+      } else if (rep) {
+        try {
+          const hi = rep.baseUrl ? await PhotosPicker.fetchImageBase64(rep.baseUrl, 2048) : { mime: rep.mime, data: rep.data };
+          bestId = await DriveAPI.uploadPhoto(`${dateStr} 대표.jpg`, hi.data, hi.mime);
+          _last._uploadCache[idx] = bestId;
+        } catch (e) {
+          console.warn('[Diary] finalize 업로드 실패, 시트 썸네일 폴백:', e);
+          try { thumb = await _makeThumb(rep, 512); } catch (_) {}
+        }
+      }
+    } else {
+      bestId = (rep || {}).id || '';
+    }
+    await DiaryStore.saveEntry({
+      date: dateStr,
+      text: (text || '').trim(),
+      bestPhotoId: bestId || (rep || {}).id || '',
+      photoIds: topImages.map(t => t.id).filter(Boolean),
+      thumb: thumb,
+    });
+    _last.diary = text;
+    _last.bestId = bestId;
+    _last.bestThumb = thumb;
+    return { ok: true };
+  }
+
+  return { run, getLast, setBestIndex, finalize };
 })();

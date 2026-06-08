@@ -442,17 +442,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!last) { showToast('먼저 일기를 생성하세요.', 'error'); return; }
     const text = document.getElementById('diary-text').value;
     const btn = document.getElementById('save-diary-btn'); const o = btn.textContent;
-    btn.disabled = true; btn.textContent = '💾 저장 중...';
+    btn.disabled = true; btn.textContent = '💾 등록 중...';
     try {
-      await DiaryStore.saveEntry({
-        date: last.dateStr, text,
-        bestPhotoId: last.bestId || (last.topImages[0] || {}).id || '',
-        photoIds: last.topImages.map(t => t.id).filter(Boolean),
-        thumb: last.bestThumb || '',
-      });
-      showToast('✅ 일기가 구글 시트에 저장되었습니다.');
+      await DiaryAgent.finalize(text); // 수정 텍스트 + 선택한 대표 사진 반영(같은 날짜 덮어쓰기)
+      showToast('✅ 수정·대표 사진이 반영되어 등록되었습니다.');
       renderMonthList();
-    } catch (e) { console.error(e); showToast('❌ 저장 실패: ' + (e.message || e), 'error'); }
+    } catch (e) { console.error(e); showToast('❌ 등록 실패: ' + (e.message || e), 'error'); }
     finally { btn.disabled = false; btn.textContent = o; }
   });
 
