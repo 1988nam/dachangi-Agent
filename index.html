@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
+  <title>다챙이 📔 AI 일기</title>
+  <link rel="stylesheet" href="style.css?v=4" />
+</head>
+<body>
+
+  <!-- 로그인 -->
+  <div id="login-screen">
+    <div class="login-card">
+      <div class="logo">📔</div>
+      <h1>다챙이</h1>
+      <p>구글 드라이브의 사진을 AI가 분석해<br/>하루 일기를 자동으로 써주는 에이전트</p>
+      <div style="margin-top: 22px; display:flex; flex-direction:column; gap:10px;">
+        <button id="login-btn" class="btn btn-block">🔐 구글로 로그인</button>
+        <button id="login-config-btn" class="btn btn-ghost btn-block">⚙️ API 연동 설정</button>
+      </div>
+      <p style="margin-top:16px; font-size:11px;">키는 이 브라우저에만 저장됩니다(localStorage).</p>
+    </div>
+  </div>
+
+  <!-- 앱 -->
+  <div id="app" class="hidden">
+    <div class="topbar">
+      <div class="title">📔 다챙이 <span class="badge">AI 일기</span></div>
+      <div class="topbar-actions">
+        <span class="user-chip" id="user-name"></span>
+        <button id="config-btn" class="btn btn-ghost">⚙️ 설정</button>
+        <button id="logout-btn" class="btn btn-ghost">로그아웃</button>
+      </div>
+    </div>
+
+    <!-- 생성 패널 -->
+    <div class="card">
+      <div class="card-title">✍️ 일기 생성</div>
+      <div class="row">
+        <div class="field">
+          <label>날짜 (이 날짜에 찍은 사진으로 작성)</label>
+          <input type="date" id="diary-date" />
+        </div>
+        <div class="field">
+          <label>1차 후보 수 / 최종 사진 수</label>
+          <div style="display:flex; gap:6px;">
+            <input type="number" id="cand-count" value="10" min="3" max="20" style="width:80px;" />
+            <input type="number" id="top-count" value="3" min="1" max="5" style="width:80px;" />
+          </div>
+        </div>
+        <button id="generate-btn" class="btn">✍️ 일기 생성</button>
+      </div>
+      <div class="hint" id="folder-hint" style="margin-top:10px;"></div>
+      <div id="progress"></div>
+    </div>
+
+    <!-- 결과 -->
+    <div class="card" id="result-card">
+      <div class="card-title">📖 생성된 일기 <span id="result-date" class="diary-meta" style="margin-left:8px;"></span></div>
+      <div class="diary-meta">선정된 사진 (보라 테두리 = 대표 사진)</div>
+      <div class="photo-strip" id="photo-strip"></div>
+      <textarea id="diary-text" placeholder="일기가 여기에 표시됩니다."></textarea>
+      <div class="modal-actions" style="justify-content:flex-start; flex-wrap:wrap;">
+        <button id="save-diary-btn" class="btn">💾 시트에 저장</button>
+        <button id="copy-btn" class="btn btn-ghost">📋 복사</button>
+        <button id="download-btn" class="btn btn-ghost">⬇️ .txt 다운로드</button>
+        <button id="regenerate-btn" class="btn btn-ghost">🔄 다시 생성</button>
+      </div>
+    </div>
+
+    <!-- 일기 히스토리 (구글 시트 '일기' DB) -->
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; display:flex;">
+        <span>📚 일기 히스토리</span>
+        <span style="display:flex; gap:8px;">
+          <button id="migrate-btn" class="btn btn-ghost" style="padding:6px 12px;">📥 기존 일기 이관</button>
+          <button id="history-refresh" class="btn btn-ghost" style="padding:6px 12px;">🔄 새로고침</button>
+        </span>
+      </div>
+      <div id="migrate-progress" class="hint" style="margin-bottom:10px;"></div>
+      <div id="history-list"><div class="hint">저장한 일기가 여기에 날짜별로 쌓입니다. (사진과 함께 다시 볼 수 있어요)</div></div>
+    </div>
+  </div>
+
+  <!-- 설정 모달 -->
+  <div id="config-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <h3>⚙️ API 연동 설정</h3>
+      <div class="field"><label>Google CLIENT_ID</label><input type="text" id="cfg-client-id" placeholder="...apps.googleusercontent.com" /></div>
+      <div class="field"><label>Google API Key</label><input type="password" id="cfg-api-key" placeholder="AIza..." /></div>
+      <div class="field"><label>Gemini API Key <span style="color:var(--text-muted); font-size:11px;">(OAuth 사용 시 비워도 됨)</span></label><input type="password" id="cfg-gemini-key" placeholder="AI Studio 발급 키" /></div>
+      <div class="field">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="cfg-gemini-oauth" style="width:16px; height:16px;" />
+          <span>Gemini를 <b>OAuth(구글 로그인)</b>로 호출 — 키 없이 사용</span>
+        </label>
+        <div class="hint">켜면 로그인 권한에 <code>generative-language</code> scope가 추가됩니다. GCP에서 ① Generative Language API 활성화 ② 동의화면에 scope 등록 후 <b>저장 → 재로그인</b> 필요. 준비 전이면 API 키로 자동 폴백됩니다.</div>
+      </div>
+      <div class="field">
+        <label>Gemini 모델</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="cfg-gemini-model" style="flex:1;">
+            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+          </select>
+          <button type="button" id="cfg-load-models" class="btn btn-ghost" style="white-space:nowrap; padding:9px 12px;">🔄 모델 불러오기</button>
+        </div>
+        <div class="hint" id="cfg-models-status"></div>
+      </div>
+      <div class="field"><label>사진 메인 폴더 ID (안에 <code>yyyy-MM</code> 월별 폴더가 있는 폴더)</label><input type="text" id="cfg-main-folder" placeholder="드라이브 폴더 ID" /></div>
+      <div class="field"><label>일기 저장 시트 ID <span style="color:var(--text-muted); font-size:11px;">(비우면 자동 생성)</span></label><input type="text" id="cfg-diary-sheet" placeholder="비우면 '다챙이 일기 DB' 시트를 자동 생성" /></div>
+      <div class="field"><label>기존 일기 문서 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(이관용)</span></label><input type="text" id="cfg-diary-folder" placeholder="GAS 일기 문서(yyyy-MM 일기)들이 있는 드라이브 폴더 ID" /></div>
+      <div class="field"><label>대표 사진 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(선택, 이관 시 사진 매칭)</span></label><input type="text" id="cfg-best-folder" placeholder="대표 사진들이 저장된 폴더 ID" /></div>
+      <div class="field"><label>일기 작성 프롬프트(가이드)</label><textarea id="cfg-prompt" rows="5"></textarea></div>
+      <div class="hint">읽기 권한(drive.readonly)으로 사진만 가져옵니다. 일기는 브라우저에 표시되며, 저장은 복사/다운로드로 합니다.</div>
+      <div class="modal-actions">
+        <button id="cfg-cancel" class="btn btn-ghost">취소</button>
+        <button id="cfg-save" class="btn">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- 기본 설정 + localStorage 병합 -->
+  <script>
+    window.DACHANGI_CONFIG = (typeof DACHANGI_CONFIG !== 'undefined') ? DACHANGI_CONFIG : {};
+    const _defaults = {
+      CLIENT_ID: '', API_KEY: '', GEMINI_API_KEY: '',
+      GEMINI_MODEL: 'gemini-2.5-flash',
+      GEMINI_USE_OAUTH: false,
+      MAIN_PHOTO_FOLDER_ID: '',
+      DIARY_SHEET_ID: '',
+      DIARY_FOLDER_ID: '',
+      BEST_PHOTO_FOLDER_ID: '',
+      SCOPES: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
+      DIARY_PROMPT: [
+        '너는 사용자의 하루를 따뜻하고 담백하게 기록하는 일기 작가야.',
+        '첨부된 사진들({{DATE}})을 종합해서 그날 하루의 일기를 한국어로 자연스럽게 써줘.',
+        '',
+        '[규칙]',
+        '- 사진에서 읽히는 장소·사람·음식·분위기를 바탕으로 하루의 흐름을 상상해 매끄럽게 이어줘.',
+        '- 과장 없이, 1인칭 시점의 솔직하고 차분한 문체로.',
+        '- 기승전결이 있게, 문장이 중간에 끊기지 않도록 끝까지 완성해.',
+        '- 사진에 없는 구체적 사실(이름/지명 등)은 단정하지 말고 분위기 위주로.',
+        '- 5~8문장 정도의 한 편의 일기로.'
+      ].join('\n')
+    };
+    for (const k in _defaults) if (DACHANGI_CONFIG[k] === undefined) DACHANGI_CONFIG[k] = _defaults[k];
+    try {
+      const stored = localStorage.getItem('dachangi_config');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        for (const k in parsed) if (parsed[k] !== undefined && parsed[k] !== null) DACHANGI_CONFIG[k] = parsed[k];
+      }
+    } catch (e) { console.error('config 로드 에러:', e); }
+    // Gemini OAuth 사용 시 로그인 권한(SCOPES)에 generative-language 추가(키 없이 호출 가능)
+    if (DACHANGI_CONFIG.GEMINI_USE_OAUTH) {
+      const need = ['https://www.googleapis.com/auth/generative-language.retriever', 'https://www.googleapis.com/auth/cloud-platform'];
+      let cur = DACHANGI_CONFIG.SCOPES || '';
+      need.forEach(s => { if (cur.indexOf(s) === -1) cur = (cur + ' ' + s).trim(); });
+      DACHANGI_CONFIG.SCOPES = cur;
+    }
+  </script>
+
+  <script src="js/auth.js?v=4"></script>
+  <script src="js/drive.js?v=4"></script>
+  <script src="js/gemini.js?v=4"></script>
+  <script src="js/diary_store.js?v=4"></script>
+  <script src="js/migrate.js?v=4"></script>
+  <script src="js/diary.js?v=4"></script>
+  <script src="js/config_modal.js?v=4"></script>
+  <script src="js/main.js?v=4"></script>
+
+  <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+  <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+</body>
+</html>
