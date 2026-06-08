@@ -94,29 +94,33 @@ function _renderCalendar(month, entries) {
     cells += `<div class="cal-cell${has.has(ds) ? ' has' : ''}" data-date="${ds}">${d}</div>`;
   }
   cal.innerHTML = `<div class="cal-head">${dows.map(x => `<div>${x}</div>`).join('')}</div><div class="cal-grid">${cells}</div>`;
-  cal.querySelectorAll('.cal-cell.has').forEach(c => c.addEventListener('click', () => expandEntry(c.dataset.date)));
+  cal.querySelectorAll('.cal-cell.has').forEach(c => c.addEventListener('click', () => showDate(c.dataset.date)));
 }
 
 function showMonth(month) {
   _showMonthView();
   document.querySelectorAll('.month-row').forEach(b => b.classList.toggle('active', b.dataset.month === month));
+  document.querySelectorAll('.date-item').forEach(b => b.classList.remove('active'));
   document.getElementById('month-title').textContent = `📚 ${month}`;
   const entries = _entriesCache.filter(e => (e.date || '').slice(0, 7) === month);
   _renderCalendar(month, entries);
   document.getElementById('month-diaries').innerHTML = entries.length ? _entryCardsHtml(entries) : '<div class="hint">이 달에 저장된 일기가 없습니다.</div>';
 }
 
-// 특정 날짜 일기 펼치기(+스크롤). 필요시 해당 월 뷰로 전환.
-async function expandEntry(date) {
-  const month = (date || '').slice(0, 7);
-  const mv = document.getElementById('view-month');
-  const title = document.getElementById('month-title').textContent;
-  if (mv.classList.contains('hidden') || title.indexOf(month) === -1) showMonth(month);
+// 특정 날짜의 일기만 단독 표시 (달력 숨김, 본문엔 그 하루만)
+async function showDate(date) {
+  _showMonthView();
+  const search = document.getElementById('diary-search'); if (search) search.value = '';
+  document.querySelectorAll('.month-row').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.date-item').forEach(b => b.classList.toggle('active', b.dataset.date === date));
+  const cal = document.getElementById('month-calendar'); if (cal) cal.style.display = 'none';
+  document.getElementById('month-title').textContent = `📅 ${date}`;
+  const entry = _entriesCache.find(e => e.date === date);
   const box = document.getElementById('month-diaries');
-  const item = box.querySelector(`.hist-item[data-date="${date}"]`);
-  if (!item) return;
-  if (item.getAttribute('data-expanded') !== '1') await _toggleEntry(item);
-  item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (!entry) { box.innerHTML = '<div class="hint">해당 날짜의 일기가 없습니다.</div>'; return; }
+  box.innerHTML = _entryCardsHtml([entry]);
+  const item = box.querySelector('.hist-item');
+  if (item) await _toggleEntry(item); // 단독 표시이므로 바로 펼침
 }
 
 // 엔트리 카드 펼치기/접기(+대표 사진 lazy 로드)
@@ -178,7 +182,7 @@ async function renderMonthList() {
     if (caret) caret.textContent = open ? '▾' : '▸';
     showMonth(m);
   }));
-  listEl.querySelectorAll('.date-item').forEach(btn => btn.addEventListener('click', () => expandEntry(btn.dataset.date)));
+  listEl.querySelectorAll('.date-item').forEach(btn => btn.addEventListener('click', () => showDate(btn.dataset.date)));
   // 월 뷰가 열려 있으면 갱신
   const mv = document.getElementById('view-month');
   if (mv && !mv.classList.contains('hidden') && !document.getElementById('diary-search').value.trim()) {
