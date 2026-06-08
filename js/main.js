@@ -113,51 +113,76 @@ async function renderPeopleList() {
 
   let html = '';
   if (pending.length) {
-    html += `<div class="hint" style="margin:2px 0 8px; color:var(--amber);">🔔 확인 필요 — 일기 사진에서 처음 발견된 인물입니다. 누군지 이름을 입력하세요.</div>`;
+    html += `<div class="hint" style="margin:2px 0 8px; color:var(--amber);">🔔 확인 필요 — 자주 등장한 인물입니다. 이름과 그룹을 입력하세요.</div>`;
     html += pending.map(p => `
       <div class="person-row pending" data-row="${p.rowIndex}">
         <img class="person-face" src="${p.photo ? `data:image/jpeg;base64,${p.photo}` : ''}" alt="" />
         <div class="person-info" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-          <input type="text" class="pend-name" placeholder="이름" style="width:110px;" />
-          <input type="text" class="pend-rel" placeholder="관계(선택)" style="width:110px;" />
+          <input type="text" class="pend-name" placeholder="이름" style="width:100px;" />
+          <input type="text" class="pend-rel" placeholder="관계(선택)" style="width:100px;" />
+          ${_groupSelectHtml('pend-group', '')}
           <button class="btn pend-save" style="padding:6px 12px;">저장</button>
         </div>
         <button class="btn btn-ghost person-del" style="padding:6px 10px;" title="이 사람이 아니면 삭제">🗑️</button>
       </div>`).join('');
   }
   if (known.length) {
-    if (pending.length) html += `<div class="side-sec" style="padding:14px 2px 6px;">등록된 인물</div>`;
-    html += known.map(p => `
-      <div class="person-row" data-row="${p.rowIndex}">
-        <img class="person-face" src="${p.photo ? `data:image/jpeg;base64,${p.photo}` : ''}" alt="" />
-        <div class="person-info">
-          <div class="person-name">${_esc(p.name)}${p.relation ? ` <span class="person-rel">${_esc(p.relation)}</span>` : ''}</div>
-          ${p.memo ? `<div class="person-memo">${_esc(p.memo)}</div>` : ''}
-        </div>
-        <button class="btn btn-ghost person-del" style="padding:6px 10px;">🗑️</button>
-      </div>`).join('');
+    const order = PeopleStore.GROUPS.concat(['']); // 가족, 친구, 직장, (미분류)
+    order.forEach(g => {
+      const members = known.filter(p => (p.group || '') === g);
+      if (!members.length) return;
+      html += `<div class="side-sec" style="padding:14px 2px 6px;">${g || '미분류'} <span style="color:var(--text-muted)">(${members.length})</span></div>`;
+      html += members.map(p => `
+        <div class="person-row" data-row="${p.rowIndex}">
+          <img class="person-face" src="${p.photo ? `data:image/jpeg;base64,${p.photo}` : ''}" alt="" />
+          <div class="person-info">
+            <div class="person-name">${_esc(p.name)}${p.relation ? ` <span class="person-rel">${_esc(p.relation)}</span>` : ''}</div>
+            ${p.memo ? `<div class="person-memo">${_esc(p.memo)}</div>` : ''}
+          </div>
+          ${_groupSelectHtml('pgroup', p.group)}
+          <button class="btn btn-ghost person-del" style="padding:6px 10px;">🗑️</button>
+        </div>`).join('');
+    });
   }
   if (!pending.length && !known.length) html = '<div class="hint">등록된 인물이 없습니다. 위에서 추가하거나, 일기를 만들면 자주 등장하는 인물이 자동으로 여기에 모입니다.</div>';
   box.innerHTML = html;
 
-  // 미확인 → 이름 저장(확인 처리)
+  // 미확인 → 이름·그룹 저장(확인 처리)
   box.querySelectorAll('.pend-save').forEach(btn => btn.addEventListener('click', async () => {
     const rowEl = btn.closest('.person-row');
     const row = parseInt(rowEl.dataset.row, 10);
     const name = rowEl.querySelector('.pend-name').value.trim();
     const relation = rowEl.querySelector('.pend-rel').value.trim();
+    const group = rowEl.querySelector('.pend-group').value;
     if (!name) { showToast('이름을 입력하세요.', 'error'); return; }
     btn.disabled = true;
-    try { await PeopleStore.updatePerson(row, { name, relation, memo: '' }); showToast(`✅ '${name}' 등록 완료`); renderPeopleList(); updatePeopleBadge(); }
-    catch (e) { btn.disabled = false; showToast('저장 실패: ' + (e.message || e), 'error'); }
+    try {
+      await PeopleStore.updatePerson(row, { name, relation, memo: '' });
+      if (group) await PeopleStore.setGroup(row, group);
+      showToast(`✅ '${name}' 등록 완료`); renderPeopleList(); updatePeopleBadge();
+    } catch (e) { btn.disabled = false; showToast('저장 실패: ' + (e.message || e), 'error'); }
   }));
-  // 삭제(미확인 오탐 제거 / 등록 인물 삭제)
+  // 그룹 변경(등록된 인물)
+  box.querySelectorAll('.pgroup').forEach(sel => sel.addEventListener('change', async () => {
+    const row = parseInt(sel.closest('.person-row').dataset.row, 10);
+    try { await PeopleStore.setGroup(row, sel.value); showToast('그룹 변경됨'); renderPeopleList(); }
+    catch (e) { showToast('그룹 변경 실패: ' + (e.message || e), 'error'); }
+  }));
+  // 삭제
   box.querySelectorAll('.person-del').forEach(btn => btn.addEventListener('click', async () => {
     const row = parseInt(btn.closest('.person-row').dataset.row, 10);
     if (!confirm('이 인물을 삭제할까요?')) return;
     try { await PeopleStore.deleteByRow(row); showToast('🗑️ 삭제됨'); renderPeopleList(); updatePeopleBadge(); }
     catch (e) { showToast('삭제 실패: ' + (e.message || e), 'error'); }
   }));
+}
+
+// 그룹 선택 <select> HTML (현재 그룹 선택 상태로)
+function _groupSelectHtml(cls, current) {
+  const groups = (typeof PeopleStore !== 'undefined' && PeopleStore.GROUPS) ? PeopleStore.GROUPS : ['가족', '친구', '직장'];
+  const opts = ['<option value="">미분류</option>']
+    .concat(groups.map(g => `<option value="${g}"${g === (current || '') ? ' selected' : ''}>${g}</option>`));
+  return `<select class="${cls}" style="width:88px; padding:6px 8px;">${opts.join('')}</select>`;
 }
 
 // ── 일기 수정/삭제 ─────────────────────────────────────────
@@ -415,16 +440,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const name = document.getElementById('person-name').value.trim();
     const relation = document.getElementById('person-relation').value.trim();
     const memo = document.getElementById('person-memo').value.trim();
+    const group = document.getElementById('person-group').value;
     if (!name) { showToast('이름을 입력하세요.', 'error'); return; }
     if (!_stagedPersonPhoto) { showToast('얼굴 사진을 선택하세요(파일 또는 📷 포토).', 'error'); return; }
     const btn = document.getElementById('person-add'); const o = btn.textContent;
     btn.disabled = true; btn.textContent = '추가 중...';
     try {
-      await PeopleStore.addPerson({ name, relation, memo, photo: _stagedPersonPhoto });
+      await PeopleStore.addPerson({ name, relation, memo, group, photo: _stagedPersonPhoto });
       showToast(`✅ '${name}' 인물 추가됨`);
       document.getElementById('person-name').value = '';
       document.getElementById('person-relation').value = '';
       document.getElementById('person-memo').value = '';
+      document.getElementById('person-group').value = '';
       document.getElementById('person-photo').value = '';
       _setStagedPersonPhoto('');
       renderPeopleList();

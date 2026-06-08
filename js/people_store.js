@@ -1,13 +1,14 @@
 /**
  * 다챙이 - 인물 DB (구글 시트 탭 '인물'). 일기 시트와 같은 스프레드시트를 사용.
- *   탭 '인물' : [이름, 관계, 메모, 사진(base64 JPEG), 생성시각, 감지횟수]
+ *   탭 '인물' : [이름, 관계, 메모, 사진(base64 JPEG), 생성시각, 감지횟수, 그룹]
  *   상태(파생): 이름 있음=확인(named) / 이름 없고 감지횟수≥임계치=확인필요(pending) / 그 미만=관찰중(observed, 숨김)
  *   일기 생성 시: 사진 속 얼굴을 기존 얼굴과 대조해 같은 사람은 감지횟수 +1, 신규는 관찰 대상으로 추가.
  *   여러 번(임계치 이상) 잡힌 얼굴만 사용자에게 "누구냐"고 물어봄(pending).
  */
 const PeopleStore = (() => {
   const TAB = '인물';
-  const HEADER = ['이름', '관계', '메모', '사진', '생성시각', '감지횟수'];
+  const HEADER = ['이름', '관계', '메모', '사진', '생성시각', '감지횟수', '그룹'];
+  const GROUPS = ['가족', '친구', '직장'];
   const MAX_PHOTO = 48000;
   const THRESHOLD = 2; // 이 횟수 이상 감지되면 '확인 필요'로 승격
 
@@ -18,7 +19,7 @@ const PeopleStore = (() => {
     const titles = (meta.sheets || []).map(s => s.properties.title);
     if (!titles.includes(TAB)) {
       await REST.batchUpdate(sid, [{ addSheet: { properties: { title: TAB } } }]);
-      await REST.valuesUpdate(sid, `${TAB}!A1:F1`, [HEADER]);
+      await REST.valuesUpdate(sid, `${TAB}!A1:G1`, [HEADER]);
     }
   }
 
@@ -37,7 +38,7 @@ const PeopleStore = (() => {
   async function loadPeople() {
     const sid = await _sid();
     await _ensureTab(sid);
-    const res = await REST.valuesGet(sid, `${TAB}!A2:F`);
+    const res = await REST.valuesGet(sid, `${TAB}!A2:G`);
     const rows = res.values || [];
     return rows.map((r, i) => {
       const name = r[0] || '';
@@ -51,6 +52,7 @@ const PeopleStore = (() => {
         photo: r[3] || '',
         createdAt: r[4] || '',
         count,
+        group: r[6] || '',
         status: _statusOf(name, count),
       };
     }).filter(p => p.name || p.photo);
@@ -61,8 +63,8 @@ const PeopleStore = (() => {
     const sid = await _sid();
     await _ensureTab(sid);
     const photo = (p.photo || '').length <= MAX_PHOTO ? (p.photo || '') : '';
-    const row = [p.name || '', p.relation || '', p.memo || '', photo, new Date().toLocaleString('ko-KR'), (p.count == null ? '' : p.count)];
-    await REST.valuesAppend(sid, `${TAB}!A:F`, [row]);
+    const row = [p.name || '', p.relation || '', p.memo || '', photo, new Date().toLocaleString('ko-KR'), (p.count == null ? '' : p.count), p.group || ''];
+    await REST.valuesAppend(sid, `${TAB}!A:G`, [row]);
     return { added: p.name };
   }
 
@@ -83,6 +85,13 @@ const PeopleStore = (() => {
     const sid = await _sid();
     await REST.valuesUpdate(sid, `${TAB}!A${rowIndex}:C${rowIndex}`, [[p.name || '', p.relation || '', p.memo || '']]);
     return { updated: rowIndex };
+  }
+
+  // 그룹만 변경
+  async function setGroup(rowIndex, group) {
+    const sid = await _sid();
+    await REST.valuesUpdate(sid, `${TAB}!G${rowIndex}`, [[group || '']]);
+    return { row: rowIndex };
   }
 
   async function deleteByRow(rowIndex) {
@@ -113,5 +122,5 @@ const PeopleStore = (() => {
     return people.filter(p => p.photo && p.name).map(p => ({ name: p.name, relation: p.relation, mime: 'image/jpeg', data: p.photo }));
   }
 
-  return { THRESHOLD, loadPeople, addPerson, addObservation, incrementSighting, updatePerson, deleteByRow, loadForPrompt, loadAllFaces, countPending };
+  return { THRESHOLD, GROUPS, loadPeople, addPerson, addObservation, incrementSighting, updatePerson, setGroup, deleteByRow, loadForPrompt, loadAllFaces, countPending };
 })();
