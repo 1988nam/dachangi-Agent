@@ -9,13 +9,40 @@ const PhotosPicker = (() => {
 
   function _bearer() { return { Authorization: `Bearer ${Auth.getToken()}` }; }
 
+  // 403 등 원인 구분용 한국어 가이드
+  function _hint(status, detail) {
+    const d = (detail || '').toLowerCase();
+    if (d.includes('has not been used') || d.includes('is disabled') || d.includes('not enabled') ||
+        (d.includes('photospicker') && d.includes('enable'))) {
+      return '\n→ 원인: GCP에서 "Photos Picker API"가 아직 활성화되지 않았습니다. API 라이브러리에서 활성화하세요.';
+    }
+    if (d.includes('scope') || d.includes('insufficient') || d.includes('permission')) {
+      return '\n→ 원인: 토큰에 포토 권한이 없습니다. ① 동의화면에 photospicker scope 등록 ② 로그아웃→재로그인(동의)하세요.';
+    }
+    if (status === 403) {
+      return '\n→ 점검: ① Photos Picker API 활성화 ② 동의화면 photospicker scope 등록 ③ 로그아웃→재로그인.';
+    }
+    return '';
+  }
+
+  async function _err(res, prefix) {
+    let detail = '';
+    try {
+      const j = await res.json();
+      if (j && j.error) detail = `${j.error.status || ''} ${j.error.message || ''}`.trim();
+    } catch (_) {}
+    const e = new Error(`${prefix} (${res.status})` + (detail ? ` — ${detail}` : '') + _hint(res.status, detail));
+    console.warn('[PhotosPicker]', prefix, res.status, detail);
+    return e;
+  }
+
   async function createSession() {
     const res = await fetch(`${BASE}/sessions`, {
       method: 'POST',
       headers: { ..._bearer(), 'Content-Type': 'application/json' },
       body: '{}',
     });
-    if (!res.ok) throw new Error(`포토 세션 생성 실패 (${res.status}) — 포토 권한/스코프 확인`);
+    if (!res.ok) throw await _err(res, '포토 세션 생성 실패');
     return res.json();
   }
 
