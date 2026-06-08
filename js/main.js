@@ -18,6 +18,7 @@ function _todayMinus(days) {
 }
 
 let _entriesCache = [];
+let _stagedPersonPhoto = '';
 function _esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 function onLoginSuccess(user) {
@@ -107,8 +108,8 @@ async function renderPeopleList() {
   let people;
   try { people = await PeopleStore.loadPeople(); }
   catch (e) { box.innerHTML = `<div class="hint" style="color:var(--red)">❌ ${_esc(e.message || e)}</div>`; return; }
-  const pending = people.filter(p => !p.name);
-  const known = people.filter(p => p.name);
+  const pending = people.filter(p => p.status === 'pending'); // 이름 없고 2회+ 감지 → 확인 필요
+  const known = people.filter(p => p.status === 'named');      // 관찰중(observed)은 숨김
 
   let html = '';
   if (pending.length) {
@@ -136,7 +137,7 @@ async function renderPeopleList() {
         <button class="btn btn-ghost person-del" style="padding:6px 10px;">🗑️</button>
       </div>`).join('');
   }
-  if (!people.length) html = '<div class="hint">등록된 인물이 없습니다. 위에서 추가하거나, 일기를 만들면 새 인물이 자동으로 여기에 모입니다.</div>';
+  if (!pending.length && !known.length) html = '<div class="hint">등록된 인물이 없습니다. 위에서 추가하거나, 일기를 만들면 자주 등장하는 인물이 자동으로 여기에 모입니다.</div>';
   box.innerHTML = html;
 
   // 미확인 → 이름 저장(확인 처리)
@@ -380,28 +381,54 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('login-config-btn').addEventListener('click', () => ConfigModal.open());
   document.getElementById('side-settings').addEventListener('click', () => ConfigModal.open());
   document.getElementById('side-people').addEventListener('click', () => showPeople());
+
+  // 인물 사진 스테이징(파일 업로드 또는 구글 포토 선택 공용)
+  function _setStagedPersonPhoto(b64) {
+    _stagedPersonPhoto = b64 || '';
+    const prev = document.getElementById('person-photo-preview');
+    if (prev) {
+      if (b64) { prev.src = `data:image/jpeg;base64,${b64}`; prev.style.display = ''; }
+      else { prev.removeAttribute('src'); prev.style.display = 'none'; }
+    }
+  }
+  document.getElementById('person-photo').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) { _setStagedPersonPhoto(''); return; }
+    try { _setStagedPersonPhoto(await _fileToThumb(file, 320)); }
+    catch (_) { showToast('사진 처리 실패', 'error'); }
+  });
+  document.getElementById('person-photo-pick').addEventListener('click', async () => {
+    const prog = document.getElementById('person-add-progress');
+    try {
+      const picked = await PhotosPicker.pick(msg => { if (prog) prog.textContent = msg; });
+      if (prog) prog.textContent = '';
+      if (!picked || !picked.length) { showToast('선택된 사진이 없습니다.', 'error'); return; }
+      if (prog) prog.textContent = '사진 불러오는 중...';
+      const img = await PhotosPicker.fetchImageBase64(picked[0].baseUrl, 320);
+      if (prog) prog.textContent = '';
+      document.getElementById('person-photo').value = '';
+      _setStagedPersonPhoto(img.data);
+      showToast('사진 선택됨 — 이름을 입력하고 추가하세요.');
+    } catch (e) { if (prog) prog.textContent = ''; showToast('포토 선택 실패: ' + (e.message || e), 'error'); }
+  });
   document.getElementById('person-add').addEventListener('click', async () => {
     const name = document.getElementById('person-name').value.trim();
     const relation = document.getElementById('person-relation').value.trim();
     const memo = document.getElementById('person-memo').value.trim();
-    const fileEl = document.getElementById('person-photo');
-    const prog = document.getElementById('person-add-progress');
     if (!name) { showToast('이름을 입력하세요.', 'error'); return; }
-    const file = fileEl.files && fileEl.files[0];
-    if (!file) { showToast('얼굴 사진을 선택하세요.', 'error'); return; }
+    if (!_stagedPersonPhoto) { showToast('얼굴 사진을 선택하세요(파일 또는 📷 포토).', 'error'); return; }
     const btn = document.getElementById('person-add'); const o = btn.textContent;
-    btn.disabled = true; btn.textContent = '추가 중...'; if (prog) prog.textContent = '사진 처리 중...';
+    btn.disabled = true; btn.textContent = '추가 중...';
     try {
-      const photo = await _fileToThumb(file, 256);
-      await PeopleStore.addPerson({ name, relation, memo, photo });
-      if (prog) prog.textContent = '';
+      await PeopleStore.addPerson({ name, relation, memo, photo: _stagedPersonPhoto });
       showToast(`✅ '${name}' 인물 추가됨`);
       document.getElementById('person-name').value = '';
       document.getElementById('person-relation').value = '';
       document.getElementById('person-memo').value = '';
-      fileEl.value = '';
+      document.getElementById('person-photo').value = '';
+      _setStagedPersonPhoto('');
       renderPeopleList();
-    } catch (e) { if (prog) prog.textContent = ''; showToast('인물 추가 실패: ' + (e.message || e), 'error'); }
+    } catch (e) { showToast('인물 추가 실패: ' + (e.message || e), 'error'); }
     finally { btn.disabled = false; btn.textContent = o; }
   });
   document.getElementById('logout-btn').addEventListener('click', () => Auth.logout());

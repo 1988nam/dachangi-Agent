@@ -147,33 +147,34 @@ const GeminiAPI = (() => {
     return text;
   }
 
-  // 사진 속 '처음 보는 사람' 감지. knownFaces:[{name?, mime, data}] = 이미 DB에 있는 얼굴(중복 방지용).
-  //  → { new_faces: [{image:1-based, box:[ymin,xmin,ymax,xmax] (0~1000)}] }
-  async function detectNewFaces(images, knownFaces) {
-    if (!images || !images.length) return { new_faces: [] };
-    const known = (knownFaces || []).filter(k => k && k.data).slice(0, 20);
-    let intro = '너는 사진 속 인물의 얼굴을 구분하는 비전 분석기야.\n';
+  // 오늘 사진 속 인물을 기존 얼굴과 대조 + 신규 구분. knownFaces:[{name?, mime, data}] (인덱스 0..N-1)
+  //  → { results: [{match: <인덱스 or -1>, image?, box?}] }  (-1 = 신규, box=[ymin,xmin,ymax,xmax] 0~1000)
+  async function analyzeFaces(images, knownFaces) {
+    if (!images || !images.length) return { results: [] };
+    const known = (knownFaces || []).filter(k => k && k.data).slice(0, 25);
+    let intro = '너는 사진 속 인물 얼굴을 구분·대조하는 비전 분석기야.\n';
     intro += known.length
-      ? `아래 [등록된 얼굴]은 이미 DB에 있는 사람들이야(총 ${known.length}명). 이들과 같은 사람은 '새 인물'이 아니야.\n`
+      ? `[등록된 얼굴]은 이미 알고 있는 얼굴들이야(인덱스 0~${known.length - 1}).\n`
       : '아직 등록된 얼굴이 없어.\n';
-    intro += `그 다음 [오늘 사진](1번~${images.length}번)을 보고, [등록된 얼굴] 중 누구와도 일치하지 않는 '처음 보는 사람'을 찾아줘.\n`
-      + '각 처음 보는 사람마다, 그 사람이 가장 또렷하게 나온 사진 번호와 얼굴 경계상자를 0~1000으로 정규화한 [ymin,xmin,ymax,xmax]로 줘. 최대 3명.\n'
-      + '사람 얼굴이 없거나 모두 등록된 얼굴이면 빈 배열. 애매하면 포함하지 마(거짓 양성 금지).\n'
-      + 'JSON만 답해: {"new_faces":[{"image":2,"box":[120,300,460,560]}]}';
+    intro += `[오늘 사진](1~${images.length}번)에 등장하는 '서로 다른 사람'을 찾아 각 사람마다:\n`
+      + '- [등록된 얼굴] 중 같은 사람이 있으면 그 인덱스를 "match"에.\n'
+      + '- 등록된 얼굴에 없는 새 얼굴이면 "match": -1 과 함께 가장 또렷한 사진번호 "image"와 얼굴상자 "box":[ymin,xmin,ymax,xmax](0~1000)를.\n'
+      + '배경에 작게/흐릿한 얼굴은 무시. 최대 5명. 애매하면 제외(거짓 양성 금지).\n'
+      + 'JSON만: {"results":[{"match":2},{"match":-1,"image":1,"box":[120,300,460,560]}]}';
     const parts = [{ text: intro }];
     if (known.length) {
       parts.push({ text: '\n[등록된 얼굴]' });
-      known.forEach((k, i) => { parts.push({ text: `등록 ${i + 1}${k.name ? ' = ' + k.name : ''}` }); parts.push({ inline_data: { mime_type: k.mime || 'image/jpeg', data: k.data } }); });
+      known.forEach((k, i) => { parts.push({ text: `얼굴 ${i}${k.name ? ' = ' + k.name : ''}` }); parts.push({ inline_data: { mime_type: k.mime || 'image/jpeg', data: k.data } }); });
     }
     parts.push({ text: '\n[오늘 사진]' });
     parts.push(..._imageParts(images));
     const text = await _call(parts, {
-      temperature: 0.1, maxOutputTokens: 512,
+      temperature: 0.1, maxOutputTokens: 600,
       responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 },
     });
-    try { const r = JSON.parse(text); return { new_faces: Array.isArray(r.new_faces) ? r.new_faces : [] }; }
-    catch (_) { return { new_faces: [] }; }
+    try { const r = JSON.parse(text); return { results: Array.isArray(r.results) ? r.results : [] }; }
+    catch (_) { return { results: [] }; }
   }
 
-  return { rankPhotos, generateDiary, listAvailableModels, detectNewFaces };
+  return { rankPhotos, generateDiary, listAvailableModels, analyzeFaces };
 })();

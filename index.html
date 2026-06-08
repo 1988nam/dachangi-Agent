@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=26" />
+  <link rel="stylesheet" href="style.css?v=27" />
 </head>
 <body>
 
@@ -96,6 +96,8 @@
             </div>
             <div class="row" style="margin-top:10px; align-items:flex-end;">
               <div class="field"><label>얼굴 사진 (정면 권장)</label><input type="file" id="person-photo" accept="image/*" /></div>
+              <button type="button" id="person-photo-pick" class="btn btn-ghost">📷 구글 포토에서 선택</button>
+              <img id="person-photo-preview" class="person-face" style="display:none;" alt="" />
               <button id="person-add" class="btn">＋ 인물 추가</button>
             </div>
             <div id="person-add-progress" class="hint" style="margin-top:8px;"></div>
@@ -228,17 +230,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=26"></script>
-  <script src="js/gapi_rest.js?v=26"></script>
-  <script src="js/drive.js?v=26"></script>
-  <script src="js/photos_picker.js?v=26"></script>
-  <script src="js/gemini.js?v=26"></script>
-  <script src="js/diary_store.js?v=26"></script>
-  <script src="js/people_store.js?v=26"></script>
-  <script src="js/migrate.js?v=26"></script>
-  <script src="js/diary.js?v=26"></script>
-  <script src="js/config_modal.js?v=26"></script>
-  <script src="js/main.js?v=26"></script>
+  <script src="js/auth.js?v=27"></script>
+  <script src="js/gapi_rest.js?v=27"></script>
+  <script src="js/drive.js?v=27"></script>
+  <script src="js/photos_picker.js?v=27"></script>
+  <script src="js/gemini.js?v=27"></script>
+  <script src="js/diary_store.js?v=27"></script>
+  <script src="js/people_store.js?v=27"></script>
+  <script src="js/migrate.js?v=27"></script>
+  <script src="js/diary.js?v=27"></script>
+  <script src="js/config_modal.js?v=27"></script>
+  <script src="js/main.js?v=27"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

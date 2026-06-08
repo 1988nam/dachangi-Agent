@@ -163,7 +163,7 @@ const DiaryAgent = (() => {
         _done(s, '시트에 자동 저장 완료');
         if (typeof renderMonthList === 'function') renderMonthList();
         showToast('✅ 일기 생성 + 자동 저장 완료!');
-        try { await _detectNewPeople(topImages); } catch (_) {} // 새 인물 자동 감지(비차단)
+        try { await _processFaces(topImages); } catch (_) {} // 인물 대조·감지(비차단)
       } catch (e) {
         console.error('[Diary] 자동 저장 실패:', e);
         _done(s, '자동 저장 실패 — 💾 버튼으로 저장하세요');
@@ -241,28 +241,34 @@ const DiaryAgent = (() => {
     });
   }
 
-  // 사진 속 '처음 보는 사람' 자동 감지 → 인물 DB 대기열에 추가(비차단 best-effort)
-  async function _detectNewPeople(topImages) {
-    if (typeof PeopleStore === 'undefined' || !GeminiAPI.detectNewFaces) return;
-    const s = _step('🔎 사진에서 새 인물 확인 중...', true);
+  // 사진 속 인물을 기존 얼굴과 대조 → 같은 사람은 감지횟수 +1, 신규는 '관찰'로 추가.
+  //  감지횟수가 임계치(THRESHOLD)에 도달하면 '확인 필요'로 승격해 사용자에게 물어봄. (비차단)
+  async function _processFaces(topImages) {
+    if (typeof PeopleStore === 'undefined' || !GeminiAPI.analyzeFaces) return;
+    const s = _step('🔎 사진 속 인물 분석 중...', true);
     let known = [];
     try { known = await PeopleStore.loadAllFaces(); } catch (_) {}
     let res;
-    try { res = await GeminiAPI.detectNewFaces(topImages, known); }
-    catch (e) { _done(s, '새 인물 확인 건너뜀'); return; }
-    const news = (res && res.new_faces) || [];
-    let added = 0;
-    for (const nf of news.slice(0, 3)) {
-      const img = topImages[(nf.image || 1) - 1];
-      if (!img || !Array.isArray(nf.box) || nf.box.length < 4) continue;
-      const crop = await _cropFace(img, nf.box, 256);
-      if (crop) { try { await PeopleStore.addPending(crop); added++; } catch (_) {} }
+    try { res = await GeminiAPI.analyzeFaces(topImages, known); }
+    catch (e) { _done(s, '인물 분석 건너뜀'); return; }
+    const results = (res && res.results) || [];
+    let promoted = 0, observed = 0;
+    for (const r of results.slice(0, 5)) {
+      if (typeof r.match === 'number' && r.match >= 0 && r.match < known.length) {
+        const k = known[r.match];
+        if (!k.name && k.count != null) { // 미명명 관찰 대상만 카운트(이미 확인/대기는 제외)
+          try { await PeopleStore.incrementSighting(k.rowIndex, k.count); if (k.count + 1 === PeopleStore.THRESHOLD) promoted++; } catch (_) {}
+        }
+      } else if (r.match === -1 && Array.isArray(r.box) && r.box.length >= 4) {
+        const img = topImages[(r.image || 1) - 1];
+        if (!img) continue;
+        const crop = await _cropFace(img, r.box, 256);
+        if (crop) { try { await PeopleStore.addObservation(crop); observed++; } catch (_) {} }
+      }
     }
-    _done(s, added ? `처음 보는 인물 ${added}명 발견 → 인물 관리에서 이름 입력` : '새 인물 없음');
-    if (added) {
-      if (typeof updatePeopleBadge === 'function') updatePeopleBadge();
-      showToast(`👤 처음 보는 인물 ${added}명 발견! 👥 인물 관리에서 누군지 입력해 주세요.`);
-    }
+    _done(s, promoted ? `자주 보이는 인물 ${promoted}명 확인 필요` : (observed ? '새 얼굴 관찰 시작' : '인물 분석 완료'));
+    if (typeof updatePeopleBadge === 'function') updatePeopleBadge();
+    if (promoted) showToast(`👤 ${PeopleStore.THRESHOLD}회 이상 등장한 인물 ${promoted}명! 👥 인물 관리에서 누군지 입력해 주세요.`);
   }
 
   function _render(dateStr, images, bestIdx, diary) {
