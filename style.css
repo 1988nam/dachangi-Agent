@@ -58,11 +58,29 @@ code { background: var(--bg-elevated); padding: 1px 6px; border-radius: 5px; fon
 .side-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
 .side-item.active { background: var(--bg-elevated); color: var(--text-primary); box-shadow: inset 3px 0 0 var(--accent); }
 .side-sec { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-muted); padding: 16px 10px 6px; font-weight: 700; }
+.side-search { width: 100%; margin: 4px 2px 8px; padding: 8px 12px; font-size: 13px; }
 .month-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
-.month-item { text-align: left; background: transparent; border: none; color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
+.month-block { display: flex; flex-direction: column; }
+.month-item { text-align: left; background: transparent; border: none; color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; cursor: pointer; align-items: center; }
 .month-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
 .month-item.active { background: var(--bg-elevated); color: var(--text-primary); }
 .month-item .cnt { color: var(--text-muted); font-size: 12px; }
+.month-caret { display: inline-block; width: 14px; font-size: 10px; color: var(--text-muted); }
+.date-sub { display: none; flex-direction: column; gap: 1px; margin: 1px 0 3px 14px; padding-left: 8px; border-left: 1px solid var(--border); }
+.date-sub.open { display: flex; }
+.date-item { text-align: left; background: transparent; border: none; color: var(--text-muted); padding: 5px 10px; border-radius: 7px; font-size: 12.5px; cursor: pointer; }
+.date-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+
+/* 달력 그리드 */
+.cal { margin-bottom: 16px; }
+.cal-head, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-head { margin-bottom: 6px; }
+.cal-head div { text-align: center; font-size: 11px; color: var(--text-muted); font-weight: 700; }
+.cal-head div:first-child { color: var(--red); }
+.cal-cell { aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; font-size: 13px; border-radius: 8px; border: 1px solid transparent; color: var(--text-muted); }
+.cal-cell.empty { border: none; }
+.cal-cell.has { background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(59,130,246,0.2)); border-color: var(--accent); color: var(--text-primary); font-weight: 700; cursor: pointer; }
+.cal-cell.has:hover { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
 .side-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 8px 0; border-top: 1px solid var(--border); margin-top: 10px; }
 .main { flex: 1; padding: 24px 22px 60px; max-width: 920px; }
 .view.hidden { display: none; }

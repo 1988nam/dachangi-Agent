@@ -33,26 +33,26 @@ function onLoginSuccess(user) {
   renderMonthList();
 }
 
-// 뷰 전환
+// ── 뷰 전환 ───────────────────────────────────────────────
 function showWrite() {
   document.getElementById('view-write').classList.remove('hidden');
   document.getElementById('view-month').classList.add('hidden');
   document.querySelectorAll('.side-item').forEach(b => b.classList.toggle('active', b.dataset.view === 'write'));
-  document.querySelectorAll('.month-item').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.month-row').forEach(b => b.classList.remove('active'));
 }
-function showMonth(month) {
+function _showMonthView() {
   document.getElementById('view-write').classList.add('hidden');
   document.getElementById('view-month').classList.remove('hidden');
   document.querySelectorAll('.side-item').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.month-item').forEach(b => b.classList.toggle('active', b.dataset.month === month));
-  document.getElementById('month-title').textContent = `📚 ${month} 일기`;
-  const entries = _entriesCache.filter(e => (e.date || '').slice(0, 7) === month);
-  const box = document.getElementById('month-diaries');
-  if (!entries.length) { box.innerHTML = '<div class="hint">이 달에 저장된 일기가 없습니다.</div>'; return; }
-  box.innerHTML = entries.map(e => {
+}
+
+// 엔트리 카드 HTML (월 뷰·검색 공용). data-date로 특정 일기 펼침 가능.
+function _entryCardsHtml(entries) {
+  if (!entries.length) return '<div class="hint">일기가 없습니다.</div>';
+  return entries.map(e => {
     const preview = _esc(e.text).slice(0, 140);
     return `
-      <div class="diary-entry hist-item" data-best="${_esc(e.bestPhotoId)}" data-expanded="0">
+      <div class="diary-entry hist-item" data-date="${_esc(e.date)}" data-best="${_esc(e.bestPhotoId)}" data-expanded="0">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <strong>📅 ${_esc(e.date)}</strong>
           <span class="hist-arrow" style="color:var(--text-muted); font-size:12px;">▼</span>
@@ -66,7 +66,82 @@ function showMonth(month) {
   }).join('');
 }
 
-// 사이드바 월별 목록 (시트에서 로드 → 월별 그룹 + 건수). 현재 월 뷰면 갱신.
+// 달력 그리드 렌더 (일기 있는 날 강조·클릭)
+function _renderCalendar(month, entries) {
+  const cal = document.getElementById('month-calendar');
+  if (!cal) return;
+  cal.style.display = '';
+  const [y, m] = month.split('-').map(Number);
+  if (!y || !m) { cal.style.display = 'none'; return; }
+  const firstDow = new Date(y, m - 1, 1).getDay();
+  const days = new Date(y, m, 0).getDate();
+  const has = new Set(entries.map(e => e.date));
+  const dows = ['일', '월', '화', '수', '목', '금', '토'];
+  let cells = '';
+  for (let i = 0; i < firstDow; i++) cells += '<div class="cal-cell empty"></div>';
+  for (let d = 1; d <= days; d++) {
+    const ds = `${month}-${String(d).padStart(2, '0')}`;
+    cells += `<div class="cal-cell${has.has(ds) ? ' has' : ''}" data-date="${ds}">${d}</div>`;
+  }
+  cal.innerHTML = `<div class="cal-head">${dows.map(x => `<div>${x}</div>`).join('')}</div><div class="cal-grid">${cells}</div>`;
+  cal.querySelectorAll('.cal-cell.has').forEach(c => c.addEventListener('click', () => expandEntry(c.dataset.date)));
+}
+
+function showMonth(month) {
+  _showMonthView();
+  document.querySelectorAll('.month-row').forEach(b => b.classList.toggle('active', b.dataset.month === month));
+  document.getElementById('month-title').textContent = `📚 ${month}`;
+  const entries = _entriesCache.filter(e => (e.date || '').slice(0, 7) === month);
+  _renderCalendar(month, entries);
+  document.getElementById('month-diaries').innerHTML = entries.length ? _entryCardsHtml(entries) : '<div class="hint">이 달에 저장된 일기가 없습니다.</div>';
+}
+
+// 특정 날짜 일기 펼치기(+스크롤). 필요시 해당 월 뷰로 전환.
+async function expandEntry(date) {
+  const month = (date || '').slice(0, 7);
+  const mv = document.getElementById('view-month');
+  const title = document.getElementById('month-title').textContent;
+  if (mv.classList.contains('hidden') || title.indexOf(month) === -1) showMonth(month);
+  const box = document.getElementById('month-diaries');
+  const item = box.querySelector(`.hist-item[data-date="${date}"]`);
+  if (!item) return;
+  if (item.getAttribute('data-expanded') !== '1') await _toggleEntry(item);
+  item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// 엔트리 카드 펼치기/접기(+대표 사진 lazy 로드)
+async function _toggleEntry(item) {
+  const expanded = item.getAttribute('data-expanded') === '1';
+  item.setAttribute('data-expanded', expanded ? '0' : '1');
+  item.querySelector('.hist-preview').style.display = expanded ? '' : 'none';
+  item.querySelector('.hist-full').style.display = expanded ? 'none' : '';
+  item.querySelector('.hist-arrow').textContent = expanded ? '▼' : '▲';
+  if (!expanded) {
+    const best = item.getAttribute('data-best');
+    const ph = item.querySelector('.hist-photo');
+    if (best && ph && !ph.dataset.loaded) {
+      ph.dataset.loaded = '1';
+      ph.innerHTML = '<span class="hint">🖼️ 사진 불러오는 중...</span>';
+      try { const url = await DriveAPI.fetchThumbDataUrl(best, 360); ph.innerHTML = `<img src="${url}" style="max-width:360px; width:100%; border-radius:10px; border:1px solid var(--border);" />`; }
+      catch (_) { ph.innerHTML = '<span class="hint">사진을 불러오지 못했습니다(삭제/권한).</span>'; }
+    }
+  }
+}
+
+// 키워드 검색 (본문/날짜)
+function renderSearch(q) {
+  q = (q || '').trim();
+  if (!q) { showWrite(); document.getElementById('diary-search').value = ''; return; }
+  _showMonthView();
+  document.querySelectorAll('.month-row').forEach(b => b.classList.remove('active'));
+  document.getElementById('month-calendar').style.display = 'none';
+  const lq = q.toLowerCase();
+  const matches = _entriesCache.filter(e => (e.text || '').toLowerCase().includes(lq) || (e.date || '').includes(q));
+  document.getElementById('month-title').textContent = `🔍 "${q}" 검색 결과 (${matches.length}건)`;
+  document.getElementById('month-diaries').innerHTML = matches.length ? _entryCardsHtml(matches) : '<div class="hint">일치하는 일기가 없습니다.</div>';
+}
+
+// 사이드바 월별 트리 (월 → 날짜). 시트에서 로드.
 async function renderMonthList() {
   const listEl = document.getElementById('month-list');
   if (!listEl || typeof DiaryStore === 'undefined') return;
@@ -74,19 +149,31 @@ async function renderMonthList() {
   try { _entriesCache = await DiaryStore.loadEntries(); }
   catch (e) { listEl.innerHTML = `<div class="hint" style="padding:6px 4px; color:var(--red)">❌ ${_esc(e.message || e)}</div>`; return; }
   if (!_entriesCache.length) { listEl.innerHTML = '<div class="hint" style="padding:6px 4px;">저장한 일기 없음.<br/>일기를 만들고 💾 저장하세요.</div>'; return; }
-  const counts = {};
-  _entriesCache.forEach(e => { const m = (e.date || '').slice(0, 7); if (m) counts[m] = (counts[m] || 0) + 1; });
-  const months = Object.keys(counts).sort().reverse();
-  listEl.innerHTML = months.map(m =>
-    `<button class="month-item" data-month="${m}"><span>${m}</span><span class="cnt">${counts[m]}</span></button>`
-  ).join('');
-  listEl.querySelectorAll('.month-item').forEach(btn => btn.addEventListener('click', () => showMonth(btn.dataset.month)));
-  // 월 뷰가 열려 있으면 현재 선택 월 갱신
+  const byMonth = {};
+  _entriesCache.forEach(e => { const m = (e.date || '').slice(0, 7); if (!m) return; (byMonth[m] = byMonth[m] || []).push(e.date); });
+  const months = Object.keys(byMonth).sort().reverse();
+  listEl.innerHTML = months.map(m => {
+    const dates = byMonth[m].slice().sort().reverse();
+    return `
+      <div class="month-block">
+        <button class="month-item month-row" data-month="${m}"><span><span class="month-caret">▸</span>${m}</span><span class="cnt">${dates.length}</span></button>
+        <div class="date-sub" data-month="${m}">${dates.map(d => `<button class="date-item" data-date="${d}">${parseInt(d.slice(8), 10)}일</button>`).join('')}</div>
+      </div>`;
+  }).join('');
+  listEl.querySelectorAll('.month-row').forEach(btn => btn.addEventListener('click', () => {
+    const m = btn.dataset.month;
+    const sub = listEl.querySelector(`.date-sub[data-month="${m}"]`);
+    const caret = btn.querySelector('.month-caret');
+    const open = sub.classList.toggle('open');
+    if (caret) caret.textContent = open ? '▾' : '▸';
+    showMonth(m);
+  }));
+  listEl.querySelectorAll('.date-item').forEach(btn => btn.addEventListener('click', () => expandEntry(btn.dataset.date)));
+  // 월 뷰가 열려 있으면 갱신
   const mv = document.getElementById('view-month');
-  if (mv && !mv.classList.contains('hidden')) {
-    const active = document.querySelector('.month-item.active');
+  if (mv && !mv.classList.contains('hidden') && !document.getElementById('diary-search').value.trim()) {
+    const active = document.querySelector('.month-row.active');
     if (active) showMonth(active.dataset.month);
-    else if (months.length) showMonth(months[0]);
   }
 }
 
@@ -189,25 +276,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 월별 일기 항목 펼치기/접기(사진 lazy 로드) — 이벤트 위임
-  document.getElementById('month-diaries').addEventListener('click', async (e) => {
+  document.getElementById('month-diaries').addEventListener('click', (e) => {
     const item = e.target.closest('.hist-item');
-    if (!item) return;
-    const expanded = item.getAttribute('data-expanded') === '1';
-    item.setAttribute('data-expanded', expanded ? '0' : '1');
-    item.querySelector('.hist-preview').style.display = expanded ? '' : 'none';
-    item.querySelector('.hist-full').style.display = expanded ? 'none' : '';
-    item.querySelector('.hist-arrow').textContent = expanded ? '▼' : '▲';
-    if (!expanded) {
-      const best = item.getAttribute('data-best');
-      const ph = item.querySelector('.hist-photo');
-      if (best && ph && !ph.dataset.loaded) {
-        ph.dataset.loaded = '1';
-        ph.innerHTML = '<span class="hint">🖼️ 사진 불러오는 중...</span>';
-        try { const url = await DriveAPI.fetchThumbDataUrl(best, 360); ph.innerHTML = `<img src="${url}" style="max-width:360px; width:100%; border-radius:10px; border:1px solid var(--border);" />`; }
-        catch (_) { ph.innerHTML = '<span class="hint">사진을 불러오지 못했습니다(삭제/권한).</span>'; }
-      }
-    }
+    if (item) _toggleEntry(item);
   });
+
+  // 일기 검색 (디바운스)
+  const searchEl = document.getElementById('diary-search');
+  if (searchEl) {
+    let _t = null;
+    searchEl.addEventListener('input', () => {
+      clearTimeout(_t);
+      _t = setTimeout(() => renderSearch(searchEl.value), 200);
+    });
+  }
 
   Auth.onLogin(onLoginSuccess);
   Auth.onLogout(onLogoutDone);
