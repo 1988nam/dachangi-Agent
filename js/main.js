@@ -104,7 +104,10 @@ function showMonth(month) {
   document.getElementById('month-title').textContent = `📚 ${month}`;
   const entries = _entriesCache.filter(e => (e.date || '').slice(0, 7) === month);
   _renderCalendar(month, entries);
-  document.getElementById('month-diaries').innerHTML = entries.length ? _entryCardsHtml(entries) : '<div class="hint">이 달에 저장된 일기가 없습니다.</div>';
+  // 월 뷰는 '달력만' 표시. 개별 일기는 달력의 날짜(또는 왼쪽 날짜)를 클릭해야 단독으로 나옴.
+  document.getElementById('month-diaries').innerHTML = entries.length
+    ? `<div class="hint" style="text-align:center; padding:10px;">📅 달력에서 <b>색칠된 날짜</b>를 클릭하면 그날 일기를 봅니다. (이 달 일기 ${entries.length}건)</div>`
+    : '<div class="hint">이 달에 저장된 일기가 없습니다.</div>';
 }
 
 // 특정 날짜의 일기만 단독 표시 (달력 숨김, 본문엔 그 하루만)
