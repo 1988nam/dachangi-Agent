@@ -10,6 +10,8 @@ const Auth = (() => {
   let gisInited = false;
   let _refreshTimer = null;
   let _silentRefresh = false;
+  let _loggedIn = false;       // 앱 진입(로그인 콜백 발화) 여부 — 중복 발화/배경 갱신 구분
+  let _silentAttempted = false; // 로드 시 조용한 재로그인 1회만 시도
 
   function _scheduleTokenRefresh(expiryMs) {
     if (_refreshTimer) clearTimeout(_refreshTimer);
@@ -52,12 +54,13 @@ const Auth = (() => {
         localStorage.setItem('dachangi_token_expiry', expiry);
         gapi.client.setToken({ access_token: accessToken });
         _scheduleTokenRefresh(expiry);
-        if (_silentRefresh) {
-          _silentRefresh = false;
-          console.log('🔄 액세스 토큰 자동 갱신 완료.');
-        } else {
+        _silentRefresh = false;
+        if (!_loggedIn) {
+          _loggedIn = true;
           console.log('✅ 구글 로그인 완료.');
           if (onLoginCallback) onLoginCallback({ name: '다챙이 사용자' });
+        } else {
+          console.log('🔄 액세스 토큰 자동 갱신 완료.');
         }
       },
     });
@@ -67,7 +70,7 @@ const Auth = (() => {
   }
 
   function _tryLocalLogin() {
-    if (!gapiInited || !gisInited) return;
+    if (!gapiInited || !gisInited || _loggedIn) return;
     try {
       const storedToken = localStorage.getItem('dachangi_access_token');
       const expiry = localStorage.getItem('dachangi_token_expiry');
@@ -75,11 +78,20 @@ const Auth = (() => {
         accessToken = storedToken;
         gapi.client.setToken({ access_token: accessToken });
         _scheduleTokenRefresh(parseInt(expiry, 10));
+        _loggedIn = true;
         console.log('✅ 캐시 토큰 자동 로그인.');
         if (onLoginCallback) onLoginCallback({ name: '다챙이 사용자' });
-      } else {
-        localStorage.removeItem('dachangi_access_token');
-        localStorage.removeItem('dachangi_token_expiry');
+        return;
+      }
+      localStorage.removeItem('dachangi_access_token');
+      localStorage.removeItem('dachangi_token_expiry');
+      // 캐시 토큰 없음/만료 → 팝업 없이 조용히 재발급 시도(1회).
+      //  이전에 동의했고 추적 허용이면 자동 로그인됨. iOS ITP면 조용히 실패 → 로그인 화면 유지(수동 탭).
+      if (tokenClient && !_silentAttempted) {
+        _silentAttempted = true;
+        _silentRefresh = true;
+        try { tokenClient.requestAccessToken({ prompt: '' }); }
+        catch (_) { _silentRefresh = false; }
       }
     } catch (e) { console.error('[Auth] 로컬 로그인 시도 에러:', e); }
   }
@@ -93,6 +105,8 @@ const Auth = (() => {
     if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
     if (accessToken) { try { google.accounts.oauth2.revoke(accessToken, () => {}); } catch (_) {} }
     accessToken = null;
+    _loggedIn = false;
+    _silentAttempted = false;
     localStorage.removeItem('dachangi_access_token');
     localStorage.removeItem('dachangi_token_expiry');
     try { gapi.client.setToken(null); } catch (_) {}
