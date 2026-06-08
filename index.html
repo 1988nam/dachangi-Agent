@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
 
@@ -25,61 +25,74 @@
 
   <!-- 앱 -->
   <div id="app" class="hidden">
-    <div class="topbar">
-      <div class="title">📔 다챙이 <span class="badge">AI 일기</span></div>
-      <div class="topbar-actions">
-        <span class="user-chip" id="user-name"></span>
-        <button id="config-btn" class="btn btn-ghost">⚙️ 설정</button>
-        <button id="logout-btn" class="btn btn-ghost">로그아웃</button>
-      </div>
-    </div>
-
-    <!-- 생성 패널 -->
-    <div class="card">
-      <div class="card-title">✍️ 일기 생성</div>
-      <div class="row">
-        <div class="field">
-          <label>날짜 (이 날짜에 찍은 사진으로 작성)</label>
-          <input type="date" id="diary-date" />
+    <div class="layout">
+      <!-- 왼쪽 사이드바 -->
+      <aside class="sidebar">
+        <div class="side-logo">📔 다챙이 <span class="badge">AI 일기</span></div>
+        <nav class="side-nav">
+          <button class="side-item active" data-view="write">✍️ 새 일기 쓰기</button>
+          <button class="side-item" id="side-settings">⚙️ 설정</button>
+        </nav>
+        <div class="side-sec">
+          <span>📚 내 일기</span>
+          <button id="side-refresh" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">🔄</button>
         </div>
-        <div class="field">
-          <label>1차 후보 수 / 최종 사진 수</label>
-          <div style="display:flex; gap:6px;">
-            <input type="number" id="cand-count" value="10" min="3" max="20" style="width:80px;" />
-            <input type="number" id="top-count" value="3" min="1" max="5" style="width:80px;" />
+        <div id="month-list" class="month-list"><div class="hint" style="padding:6px 4px;">불러오는 중...</div></div>
+        <div class="side-foot">
+          <span class="user-chip" id="user-name"></span>
+          <button id="logout-btn" class="btn btn-ghost" style="padding:6px 10px;">로그아웃</button>
+        </div>
+      </aside>
+
+      <!-- 메인 영역 -->
+      <main class="main">
+        <!-- 새 일기 쓰기 뷰 -->
+        <div id="view-write" class="view">
+          <div class="card">
+            <div class="card-title">✍️ 일기 생성</div>
+            <div class="row">
+              <div class="field">
+                <label>날짜 (이 날짜에 찍은 사진으로 작성)</label>
+                <input type="date" id="diary-date" />
+              </div>
+              <div class="field">
+                <label>1차 후보 수 / 최종 사진 수</label>
+                <div style="display:flex; gap:6px;">
+                  <input type="number" id="cand-count" value="10" min="3" max="20" style="width:80px;" />
+                  <input type="number" id="top-count" value="3" min="1" max="5" style="width:80px;" />
+                </div>
+              </div>
+              <button id="generate-btn" class="btn">✍️ 일기 생성</button>
+            </div>
+            <div class="hint" id="folder-hint" style="margin-top:10px;"></div>
+            <div id="progress"></div>
+          </div>
+
+          <div class="card" id="result-card">
+            <div class="card-title">📖 생성된 일기 <span id="result-date" class="diary-meta" style="margin-left:8px;"></span></div>
+            <div class="diary-meta">선정된 사진 (보라 테두리 = 대표 사진)</div>
+            <div class="photo-strip" id="photo-strip"></div>
+            <textarea id="diary-text" placeholder="일기가 여기에 표시됩니다."></textarea>
+            <div class="modal-actions" style="justify-content:flex-start; flex-wrap:wrap;">
+              <button id="save-diary-btn" class="btn">💾 시트에 저장</button>
+              <button id="copy-btn" class="btn btn-ghost">📋 복사</button>
+              <button id="download-btn" class="btn btn-ghost">⬇️ .txt 다운로드</button>
+              <button id="regenerate-btn" class="btn btn-ghost">🔄 다시 생성</button>
+            </div>
           </div>
         </div>
-        <button id="generate-btn" class="btn">✍️ 일기 생성</button>
-      </div>
-      <div class="hint" id="folder-hint" style="margin-top:10px;"></div>
-      <div id="progress"></div>
-    </div>
 
-    <!-- 결과 -->
-    <div class="card" id="result-card">
-      <div class="card-title">📖 생성된 일기 <span id="result-date" class="diary-meta" style="margin-left:8px;"></span></div>
-      <div class="diary-meta">선정된 사진 (보라 테두리 = 대표 사진)</div>
-      <div class="photo-strip" id="photo-strip"></div>
-      <textarea id="diary-text" placeholder="일기가 여기에 표시됩니다."></textarea>
-      <div class="modal-actions" style="justify-content:flex-start; flex-wrap:wrap;">
-        <button id="save-diary-btn" class="btn">💾 시트에 저장</button>
-        <button id="copy-btn" class="btn btn-ghost">📋 복사</button>
-        <button id="download-btn" class="btn btn-ghost">⬇️ .txt 다운로드</button>
-        <button id="regenerate-btn" class="btn btn-ghost">🔄 다시 생성</button>
-      </div>
-    </div>
-
-    <!-- 일기 히스토리 (구글 시트 '일기' DB) -->
-    <div class="card">
-      <div class="card-title" style="justify-content:space-between; display:flex;">
-        <span>📚 일기 히스토리</span>
-        <span style="display:flex; gap:8px;">
-          <button id="migrate-btn" class="btn btn-ghost" style="padding:6px 12px;">📥 기존 일기 이관</button>
-          <button id="history-refresh" class="btn btn-ghost" style="padding:6px 12px;">🔄 새로고침</button>
-        </span>
-      </div>
-      <div id="migrate-progress" class="hint" style="margin-bottom:10px;"></div>
-      <div id="history-list"><div class="hint">저장한 일기가 여기에 날짜별로 쌓입니다. (사진과 함께 다시 볼 수 있어요)</div></div>
+        <!-- 월별 일기 뷰 -->
+        <div id="view-month" class="view hidden">
+          <div class="card">
+            <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+              <span id="month-title">📚 일기</span>
+              <button id="back-write" class="btn btn-ghost" style="padding:6px 12px;">＋ 새 일기</button>
+            </div>
+            <div id="month-diaries"><div class="hint">왼쪽에서 월을 선택하세요.</div></div>
+          </div>
+        </div>
+      </main>
     </div>
   </div>
 
@@ -113,6 +126,11 @@
       <div class="field"><label>일기 저장 시트 ID <span style="color:var(--text-muted); font-size:11px;">(비우면 자동 생성)</span></label><input type="text" id="cfg-diary-sheet" placeholder="비우면 '다챙이 일기 DB' 시트를 자동 생성" /></div>
       <div class="field"><label>기존 일기 문서 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(이관용)</span></label><input type="text" id="cfg-diary-folder" placeholder="GAS 일기 문서(yyyy-MM 일기)들이 있는 드라이브 폴더 ID" /></div>
       <div class="field"><label>대표 사진 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(선택, 이관 시 사진 매칭)</span></label><input type="text" id="cfg-best-folder" placeholder="대표 사진들이 저장된 폴더 ID" /></div>
+      <div class="field">
+        <label>기존 일기 이관</label>
+        <button type="button" id="migrate-btn" class="btn btn-ghost" style="width:auto; padding:9px 14px;">📥 기존 일기 문서 → 일기 시트로 이관</button>
+        <div class="hint" id="migrate-progress" style="margin-top:6px;"></div>
+      </div>
       <div class="field"><label>일기 작성 프롬프트(가이드)</label><textarea id="cfg-prompt" rows="5"></textarea></div>
       <div class="hint">읽기 권한(drive.readonly)으로 사진만 가져옵니다. 일기는 브라우저에 표시되며, 저장은 복사/다운로드로 합니다.</div>
       <div class="modal-actions">
@@ -165,15 +183,15 @@
     }
   </script>
 
-  <script src="js/auth.js?v=7"></script>
-  <script src="js/gapi_rest.js?v=7"></script>
-  <script src="js/drive.js?v=7"></script>
-  <script src="js/gemini.js?v=7"></script>
-  <script src="js/diary_store.js?v=7"></script>
-  <script src="js/migrate.js?v=7"></script>
-  <script src="js/diary.js?v=7"></script>
-  <script src="js/config_modal.js?v=7"></script>
-  <script src="js/main.js?v=7"></script>
+  <script src="js/auth.js?v=8"></script>
+  <script src="js/gapi_rest.js?v=8"></script>
+  <script src="js/drive.js?v=8"></script>
+  <script src="js/gemini.js?v=8"></script>
+  <script src="js/diary_store.js?v=8"></script>
+  <script src="js/migrate.js?v=8"></script>
+  <script src="js/diary.js?v=8"></script>
+  <script src="js/config_modal.js?v=8"></script>
+  <script src="js/main.js?v=8"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

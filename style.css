@@ -45,8 +45,34 @@ code { background: var(--bg-elevated); padding: 1px 6px; border-radius: 5px; fon
 .btn-ghost { background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-secondary); }
 .btn-block { width: 100%; }
 
-/* 앱 */
-#app { max-width: 1000px; margin: 0 auto; padding: 22px 18px 60px; }
+/* 앱 레이아웃 (사이드바 + 메인) */
+#app { min-height: 100vh; }
+.layout { display: flex; min-height: 100vh; align-items: stretch; }
+.sidebar {
+  width: 260px; flex: none; background: var(--bg-surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; padding: 16px 12px; position: sticky; top: 0; height: 100vh;
+}
+.side-logo { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; padding: 6px 8px 14px; }
+.side-nav { display: flex; flex-direction: column; gap: 4px; }
+.side-item { text-align: left; background: transparent; border: none; color: var(--text-secondary); padding: 10px 12px; border-radius: 9px; font-size: 14px; font-weight: 600; }
+.side-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.side-item.active { background: var(--bg-elevated); color: var(--text-primary); box-shadow: inset 3px 0 0 var(--accent); }
+.side-sec { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-muted); padding: 16px 10px 6px; font-weight: 700; }
+.month-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.month-item { text-align: left; background: transparent; border: none; color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
+.month-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.month-item.active { background: var(--bg-elevated); color: var(--text-primary); }
+.month-item .cnt { color: var(--text-muted); font-size: 12px; }
+.side-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 8px 0; border-top: 1px solid var(--border); margin-top: 10px; }
+.main { flex: 1; padding: 24px 22px 60px; max-width: 920px; }
+.view.hidden { display: none; }
+.diary-entry { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: pointer; }
+@media (max-width: 760px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }
+  .month-list { max-height: 200px; }
+  .main { max-width: 100%; padding: 18px 14px 50px; }
+}
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
 .topbar .title { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
 .topbar .badge { font-size: 11px; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 2px 8px; }
