@@ -14,6 +14,15 @@ const DiaryStore = (() => {
     return fromCfg || localStorage.getItem(LS_ID) || '';
   }
 
+  // Sheets API 클라이언트가 없으면 지연 로드. 실패 시 원인 안내.
+  async function _ensureSheetsApi() {
+    if (gapi.client && gapi.client.sheets) return;
+    try { await gapi.client.load('https://sheets.googleapis.com/$discovery/rest?version=v4'); } catch (_) {}
+    if (!gapi.client || !gapi.client.sheets) {
+      throw new Error('구글 시트 API를 사용할 수 없습니다. GCP에서 "Google Sheets API"를 활성화하고, API 키 제한(API restrictions)에 Sheets API를 포함한 뒤 새로고침하세요.');
+    }
+  }
+
   async function _ensureTab(sid) {
     const meta = await gapi.client.sheets.spreadsheets.get({ spreadsheetId: sid, fields: 'sheets.properties.title' });
     const titles = (meta.result.sheets || []).map(s => s.properties.title);
@@ -25,6 +34,7 @@ const DiaryStore = (() => {
 
   // 시트 확보(없으면 자동 생성) → spreadsheetId 반환
   async function ensureSheet() {
+    await _ensureSheetsApi();
     let sid = currentSheetId();
     if (sid) { await _ensureTab(sid); return sid; }
     const created = await gapi.client.sheets.spreadsheets.create({

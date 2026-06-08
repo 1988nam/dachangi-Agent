@@ -30,11 +30,11 @@ const Auth = (() => {
     await new Promise((resolve) => gapi.load('client', resolve));
     await gapi.client.init({
       apiKey: cfg.API_KEY,
-      discoveryDocs: [
-        'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
-        'https://sheets.googleapis.com/$discovery/rest?version=v4',
-      ],
+      discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
     });
+    // Sheets API는 별도 로드(실패해도 로그인·드라이브 기능은 유지; 일기 저장/이관만 제한)
+    try { await gapi.client.load('https://sheets.googleapis.com/$discovery/rest?version=v4'); }
+    catch (e) { console.warn('[Auth] Sheets API 로드 실패(일기 저장/이관 제한):', e); }
     gapiInited = true;
     console.log('[Auth] GAPI 초기화 완료.');
     _tryLocalLogin();
