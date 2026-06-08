@@ -1,12 +1,15 @@
 /**
  * 다챙이 - 일기 저장소 (구글 시트를 DB로). 사진은 드라이브에 두고 ID만 저장.
- *   시트 탭 '일기' : [날짜, 일기, 대표사진ID, 사진ID목록, 생성시각]
+ *   시트 탭 '일기' : [날짜, 일기, 대표사진ID, 사진ID목록, 생성시각, 대표썸네일(base64)]
+ *   대표썸네일: 구글 포토 소스는 baseUrl이 ~60분 만료되어 재참조 불가 →
+ *     저장 시 작은 JPEG 썸네일을 시트에 직접 넣어 히스토리에서 그대로 표시(드라이브 불필요).
  *   모든 시트 호출은 REST(OAuth Bearer) — API 키/디스커버리 불필요.
  */
 const DiaryStore = (() => {
   const TAB = '일기';
-  const HEADER = ['날짜', '일기', '대표사진ID', '사진ID목록', '생성시각'];
+  const HEADER = ['날짜', '일기', '대표사진ID', '사진ID목록', '생성시각', '대표썸네일'];
   const LS_ID = 'dachangi_diary_sheet_id';
+  const MAX_THUMB = 48000; // 시트 셀 한도(5만자) 안전 여유
 
   function currentSheetId() {
     const cfg = window.DACHANGI_CONFIG || {};
@@ -19,7 +22,7 @@ const DiaryStore = (() => {
     const titles = (meta.sheets || []).map(s => s.properties.title);
     if (!titles.includes(TAB)) {
       await REST.batchUpdate(sid, [{ addSheet: { properties: { title: TAB } } }]);
-      await REST.valuesUpdate(sid, `${TAB}!A1:E1`, [HEADER]);
+      await REST.valuesUpdate(sid, `${TAB}!A1:F1`, [HEADER]);
     }
   }
 
@@ -29,7 +32,7 @@ const DiaryStore = (() => {
     if (sid) { await _ensureTab(sid); return sid; }
     const created = await REST.createSpreadsheet({ properties: { title: '다챙이 일기 DB' }, sheets: [{ properties: { title: TAB } }] });
     sid = created.spreadsheetId;
-    await REST.valuesUpdate(sid, `${TAB}!A1:E1`, [HEADER]);
+    await REST.valuesUpdate(sid, `${TAB}!A1:F1`, [HEADER]);
     localStorage.setItem(LS_ID, sid);
     return sid;
   }
@@ -37,7 +40,7 @@ const DiaryStore = (() => {
   // 전체 일기 로드(최신순)
   async function loadEntries() {
     const sid = await ensureSheet();
-    const res = await REST.valuesGet(sid, `${TAB}!A2:E`);
+    const res = await REST.valuesGet(sid, `${TAB}!A2:F`);
     const rows = res.values || [];
     return rows.map((r, i) => ({
       rowIndex: i + 2,
@@ -46,27 +49,30 @@ const DiaryStore = (() => {
       bestPhotoId: r[2] || '',
       photoIds: (r[3] || '').split(',').map(s => s.trim()).filter(Boolean),
       createdAt: r[4] || '',
+      thumb: r[5] || '',
     })).filter(e => e.date).reverse();
   }
 
   // 같은 날짜 있으면 업데이트, 없으면 추가
   async function saveEntry(entry) {
     const sid = await ensureSheet();
+    const thumb = (entry.thumb || '').length <= MAX_THUMB ? (entry.thumb || '') : '';
     const rowVals = [
       entry.date,
       (entry.text || '').slice(0, 45000),
       entry.bestPhotoId || '',
       (entry.photoIds || []).join(','),
       new Date().toLocaleString('ko-KR'),
+      thumb,
     ];
     const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
     const dates = (res.values || []).map(r => r[0]);
     const idx = dates.indexOf(entry.date);
     if (idx !== -1) {
       const row = idx + 2;
-      await REST.valuesUpdate(sid, `${TAB}!A${row}:E${row}`, [rowVals]);
+      await REST.valuesUpdate(sid, `${TAB}!A${row}:F${row}`, [rowVals]);
     } else {
-      await REST.valuesAppend(sid, `${TAB}!A:E`, [rowVals]);
+      await REST.valuesAppend(sid, `${TAB}!A:F`, [rowVals]);
     }
     return { sheetId: sid };
   }
@@ -84,9 +90,9 @@ const DiaryStore = (() => {
     for (const e of sorted) {
       if (!e.date || existing.has(e.date) || seen.has(e.date)) { skipped++; continue; }
       seen.add(e.date);
-      rows.push([e.date, (e.text || '').slice(0, 45000), e.bestPhotoId || '', (e.photoIds || []).join(','), now]);
+      rows.push([e.date, (e.text || '').slice(0, 45000), e.bestPhotoId || '', (e.photoIds || []).join(','), now, '']);
     }
-    if (rows.length) await REST.valuesAppend(sid, `${TAB}!A:E`, rows);
+    if (rows.length) await REST.valuesAppend(sid, `${TAB}!A:F`, rows);
     return { added: rows.length, skipped };
   }
 

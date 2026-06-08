@@ -118,7 +118,13 @@ const DiaryAgent = (() => {
       if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); return; }
       _done(s, '일기 작성 완료');
 
-      _last = { dateStr, topImages, diary };
+      // 포토 소스는 baseUrl 만료로 히스토리 재참조 불가 → 대표 사진 썸네일을 시트에 저장하기 위해 생성
+      let bestThumb = '';
+      if (source === 'photos' && topImages[0]) {
+        try { bestThumb = await _makeThumb(topImages[0], 320); } catch (_) {}
+      }
+
+      _last = { dateStr, topImages, diary, bestThumb };
       _render(dateStr, topImages, diary);
       showToast('✅ 일기 생성 완료! (💾 시트에 저장하면 영구 보관)');
     } catch (e) {
@@ -128,6 +134,27 @@ const DiaryAgent = (() => {
       _busy = false;
       const b = document.getElementById('generate-btn'); if (b) b.disabled = false;
     }
+  }
+
+  // 메모리의 큰 사진(base64)을 작은 JPEG 썸네일 base64로 (시트 저장용)
+  function _makeThumb(img, maxDim) {
+    maxDim = maxDim || 320;
+    return new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const scale = Math.min(1, maxDim / Math.max(image.width, image.height));
+          const w = Math.max(1, Math.round(image.width * scale));
+          const h = Math.max(1, Math.round(image.height * scale));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(image, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', 0.6).split(',')[1] || '');
+        } catch (_) { resolve(''); }
+      };
+      image.onerror = () => resolve('');
+      image.src = `data:${img.mime};base64,${img.data}`;
+    });
   }
 
   function _render(dateStr, topImages, diary) {

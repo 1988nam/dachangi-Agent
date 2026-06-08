@@ -57,6 +57,10 @@ function _entryCardsHtml(entries) {
   if (!entries.length) return '<div class="hint">일기가 없습니다.</div>';
   return entries.map(e => {
     const preview = _esc(e.text).slice(0, 140);
+    // 시트에 저장된 썸네일(포토 소스)은 바로 렌더, 없으면 드라이브 ID로 펼칠 때 lazy 로드
+    const photoHtml = e.thumb
+      ? `<img src="data:image/jpeg;base64,${e.thumb}" style="max-width:360px; width:100%; border-radius:10px; border:1px solid var(--border);" />`
+      : '';
     return `
       <div class="diary-entry hist-item" data-date="${_esc(e.date)}" data-best="${_esc(e.bestPhotoId)}" data-expanded="0">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -65,7 +69,7 @@ function _entryCardsHtml(entries) {
         </div>
         <div class="hist-preview" style="color:var(--text-secondary); font-size:13px; margin-top:6px;">${preview}${e.text.length > 140 ? '…' : ''}</div>
         <div class="hist-full" style="display:none; margin-top:10px;">
-          <div class="hist-photo" style="margin-bottom:10px;"></div>
+          <div class="hist-photo" style="margin-bottom:10px;"${e.thumb ? ' data-loaded="1"' : ''}>${photoHtml}</div>
           <div style="white-space:pre-wrap; line-height:1.7; font-size:14px;">${_esc(e.text)}</div>
         </div>
       </div>`;
@@ -254,6 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         date: last.dateStr, text,
         bestPhotoId: (last.topImages[0] || {}).id || '',
         photoIds: last.topImages.map(t => t.id).filter(Boolean),
+        thumb: last.bestThumb || '',
       });
       showToast('✅ 일기가 구글 시트에 저장되었습니다.');
       renderMonthList();
