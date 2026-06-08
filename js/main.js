@@ -43,13 +43,119 @@ function onLoginSuccess(user) {
 function showWrite() {
   document.getElementById('view-write').classList.remove('hidden');
   document.getElementById('view-month').classList.add('hidden');
+  document.getElementById('view-people').classList.add('hidden');
   document.querySelectorAll('.side-item').forEach(b => b.classList.toggle('active', b.dataset.view === 'write'));
   document.querySelectorAll('.month-row').forEach(b => b.classList.remove('active'));
 }
 function _showMonthView() {
   document.getElementById('view-write').classList.add('hidden');
+  document.getElementById('view-people').classList.add('hidden');
   document.getElementById('view-month').classList.remove('hidden');
   document.querySelectorAll('.side-item').forEach(b => b.classList.remove('active'));
+}
+function showPeople() {
+  document.getElementById('view-write').classList.add('hidden');
+  document.getElementById('view-month').classList.add('hidden');
+  document.getElementById('view-people').classList.remove('hidden');
+  document.querySelectorAll('.side-item').forEach(b => b.classList.remove('active'));
+  const sp = document.getElementById('side-people'); if (sp) sp.classList.add('active');
+  document.querySelectorAll('.month-row').forEach(b => b.classList.remove('active'));
+  renderPeopleList();
+}
+
+// 파일 → 작은 정사각 JPEG 썸네일 base64 (인물 얼굴 저장용)
+function _fileToThumb(file, maxDim) {
+  maxDim = maxDim || 256;
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', 0.8).split(',')[1] || '');
+      };
+      img.onerror = reject;
+      img.src = fr.result;
+    };
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+}
+
+// 등록된 인물 목록 렌더
+async function renderPeopleList() {
+  const box = document.getElementById('people-list');
+  if (!box || typeof PeopleStore === 'undefined') return;
+  box.innerHTML = '<div class="hint">⏳ 불러오는 중...</div>';
+  let people;
+  try { people = await PeopleStore.loadPeople(); }
+  catch (e) { box.innerHTML = `<div class="hint" style="color:var(--red)">❌ ${_esc(e.message || e)}</div>`; return; }
+  if (!people.length) { box.innerHTML = '<div class="hint">등록된 인물이 없습니다. 위에서 추가하세요.</div>'; return; }
+  box.innerHTML = people.map(p => `
+    <div class="person-row" data-row="${p.rowIndex}">
+      <img class="person-face" src="${p.photo ? `data:image/jpeg;base64,${p.photo}` : ''}" alt="" />
+      <div class="person-info">
+        <div class="person-name">${_esc(p.name)}${p.relation ? ` <span class="person-rel">${_esc(p.relation)}</span>` : ''}</div>
+        ${p.memo ? `<div class="person-memo">${_esc(p.memo)}</div>` : ''}
+      </div>
+      <button class="btn btn-ghost person-del" style="padding:6px 10px;">🗑️</button>
+    </div>`).join('');
+  box.querySelectorAll('.person-del').forEach(btn => btn.addEventListener('click', async () => {
+    const row = parseInt(btn.closest('.person-row').dataset.row, 10);
+    if (!confirm('이 인물을 삭제할까요?')) return;
+    try { await PeopleStore.deleteByRow(row); showToast('🗑️ 삭제됨'); renderPeopleList(); }
+    catch (e) { showToast('삭제 실패: ' + (e.message || e), 'error'); }
+  }));
+}
+
+// ── 일기 수정/삭제 ─────────────────────────────────────────
+function _enterEditMode(item, date) {
+  item.classList.add('editing');
+  const entry = _entriesCache.find(e => e.date === date);
+  const body = item.querySelector('.hist-body');
+  const actions = item.querySelector('.hist-actions');
+  const text = entry ? entry.text : (body ? body.textContent : '');
+  if (body) { body.innerHTML = `<textarea class="hist-edit-area" style="width:100%; min-height:200px;">${_esc(text)}</textarea>`; body.style.whiteSpace = 'normal'; }
+  if (actions) actions.innerHTML = `<button class="btn hist-save" style="padding:6px 12px;">💾 저장</button><button class="btn btn-ghost hist-cancel" style="padding:6px 12px;">취소</button>`;
+}
+function _renderViewMode(item, date) {
+  item.classList.remove('editing');
+  const entry = _entriesCache.find(e => e.date === date);
+  const body = item.querySelector('.hist-body');
+  const actions = item.querySelector('.hist-actions');
+  if (body) { body.textContent = entry ? entry.text : ''; body.style.whiteSpace = 'pre-wrap'; }
+  if (actions) actions.innerHTML = `<button class="btn btn-ghost hist-edit" style="padding:6px 12px;">✏️ 수정</button><button class="btn btn-ghost hist-del" style="padding:6px 12px;">🗑️ 삭제</button>`;
+}
+async function _saveEdit(item, date) {
+  const area = item.querySelector('.hist-edit-area');
+  if (!area) return;
+  const newText = area.value;
+  const saveBtn = item.querySelector('.hist-save'); const o = saveBtn ? saveBtn.textContent : '';
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중...'; }
+  try {
+    await DiaryStore.updateText(date, newText);
+    const entry = _entriesCache.find(e => e.date === date);
+    if (entry) entry.text = newText;
+    _renderViewMode(item, date);
+    showToast('✅ 일기가 수정되었습니다.');
+  } catch (e) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = o; }
+    showToast('수정 실패: ' + (e.message || e), 'error');
+  }
+}
+async function _deleteDiary(item, date) {
+  if (!confirm(`${date} 일기를 삭제할까요?\n되돌릴 수 없습니다.`)) return;
+  try {
+    await DiaryStore.deleteByDate(date);
+    showToast('🗑️ 일기가 삭제되었습니다.');
+    await renderMonthList();
+    showWrite();
+  } catch (e) { showToast('삭제 실패: ' + (e.message || e), 'error'); }
 }
 
 // 엔트리 카드 HTML (월 뷰·검색 공용). data-date로 특정 일기 펼침 가능.
@@ -70,7 +176,11 @@ function _entryCardsHtml(entries) {
         <div class="hist-preview" style="color:var(--text-secondary); font-size:13px; margin-top:6px;">${preview}${e.text.length > 140 ? '…' : ''}</div>
         <div class="hist-full" style="display:none; margin-top:10px;">
           <div class="hist-photo" style="margin-bottom:10px;"${e.thumb ? ' data-loaded="1"' : ''}>${photoHtml}</div>
-          <div style="white-space:pre-wrap; line-height:1.7; font-size:14px;">${_esc(e.text)}</div>
+          <div class="hist-body" style="white-space:pre-wrap; line-height:1.7; font-size:14px;">${_esc(e.text)}</div>
+          <div class="hist-actions" style="margin-top:10px; display:flex; gap:8px;">
+            <button class="btn btn-ghost hist-edit" style="padding:6px 12px;">✏️ 수정</button>
+            <button class="btn btn-ghost hist-del" style="padding:6px 12px;">🗑️ 삭제</button>
+          </div>
         </div>
       </div>`;
   }).join('');
@@ -223,6 +333,31 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('login-config-btn').addEventListener('click', () => ConfigModal.open());
   document.getElementById('side-settings').addEventListener('click', () => ConfigModal.open());
+  document.getElementById('side-people').addEventListener('click', () => showPeople());
+  document.getElementById('person-add').addEventListener('click', async () => {
+    const name = document.getElementById('person-name').value.trim();
+    const relation = document.getElementById('person-relation').value.trim();
+    const memo = document.getElementById('person-memo').value.trim();
+    const fileEl = document.getElementById('person-photo');
+    const prog = document.getElementById('person-add-progress');
+    if (!name) { showToast('이름을 입력하세요.', 'error'); return; }
+    const file = fileEl.files && fileEl.files[0];
+    if (!file) { showToast('얼굴 사진을 선택하세요.', 'error'); return; }
+    const btn = document.getElementById('person-add'); const o = btn.textContent;
+    btn.disabled = true; btn.textContent = '추가 중...'; if (prog) prog.textContent = '사진 처리 중...';
+    try {
+      const photo = await _fileToThumb(file, 256);
+      await PeopleStore.addPerson({ name, relation, memo, photo });
+      if (prog) prog.textContent = '';
+      showToast(`✅ '${name}' 인물 추가됨`);
+      document.getElementById('person-name').value = '';
+      document.getElementById('person-relation').value = '';
+      document.getElementById('person-memo').value = '';
+      fileEl.value = '';
+      renderPeopleList();
+    } catch (e) { if (prog) prog.textContent = ''; showToast('인물 추가 실패: ' + (e.message || e), 'error'); }
+    finally { btn.disabled = false; btn.textContent = o; }
+  });
   document.getElementById('logout-btn').addEventListener('click', () => Auth.logout());
   // 사이드바 뷰 전환
   document.querySelector('.side-item[data-view="write"]').addEventListener('click', () => showWrite());
@@ -295,10 +430,18 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally { btn.disabled = false; btn.textContent = o; }
   });
 
-  // 월별 일기 항목 펼치기/접기(사진 lazy 로드) — 이벤트 위임
-  document.getElementById('month-diaries').addEventListener('click', (e) => {
+  // 월별 일기 항목: 펼치기/접기 + 수정/삭제 — 이벤트 위임
+  document.getElementById('month-diaries').addEventListener('click', async (e) => {
     const item = e.target.closest('.hist-item');
-    if (item) _toggleEntry(item);
+    if (!item) return;
+    const date = item.dataset.date;
+    if (e.target.closest('.hist-edit')) { e.stopPropagation(); _enterEditMode(item, date); return; }
+    if (e.target.closest('.hist-cancel')) { e.stopPropagation(); _renderViewMode(item, date); return; }
+    if (e.target.closest('.hist-save')) { e.stopPropagation(); await _saveEdit(item, date); return; }
+    if (e.target.closest('.hist-del')) { e.stopPropagation(); await _deleteDiary(item, date); return; }
+    if (item.classList.contains('editing')) return;     // 편집 중엔 토글 안 함
+    if (e.target.closest('.hist-actions')) return;       // 액션 영역은 토글 안 함
+    _toggleEntry(item);
   });
 
   // 일기 검색 (디바운스)

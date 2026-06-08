@@ -113,8 +113,12 @@ const DiaryAgent = (() => {
       if (topImages.length === 0) { _done(s, '매핑된 사진 없음'); showToast('랭킹 결과를 사진에 매핑하지 못했습니다.', 'error'); return; }
       _done(s, `대표 사진 ${topImages.length}장 선정`);
 
-      s = _step('✍️ Gemini로 일기 작성 중...', true);
-      const diary = await GeminiAPI.generateDiary(topImages, dateStr, cfg.DIARY_PROMPT || '');
+      // 등록된 인물(얼굴+이름)을 참조로 전달 → 사진 속 인물 인지
+      let people = [];
+      try { if (typeof PeopleStore !== 'undefined') people = await PeopleStore.loadForPrompt(); } catch (_) {}
+
+      s = _step(`✍️ Gemini로 일기 작성 중...${people.length ? ` (인물 ${people.length}명 참조)` : ''}`, true);
+      const diary = await GeminiAPI.generateDiary(topImages, dateStr, cfg.DIARY_PROMPT || '', people);
       if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); return; }
       _done(s, '일기 작성 완료');
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=23" />
+  <link rel="stylesheet" href="style.css?v=24" />
 </head>
 <body>
 
@@ -31,6 +31,7 @@
         <div class="side-logo">📔 다챙이 <span class="badge">AI 일기</span></div>
         <nav class="side-nav">
           <button class="side-item active" data-view="write">✍️ 새 일기 쓰기</button>
+          <button class="side-item" id="side-people">👥 인물 관리</button>
           <button class="side-item" id="side-settings">⚙️ 설정</button>
         </nav>
         <div class="side-sec">
@@ -80,6 +81,28 @@
               <button id="download-btn" class="btn btn-ghost">⬇️ .txt 다운로드</button>
               <button id="regenerate-btn" class="btn btn-ghost">🔄 다시 생성</button>
             </div>
+          </div>
+        </div>
+
+        <!-- 인물 관리 뷰 -->
+        <div id="view-people" class="view hidden">
+          <div class="card">
+            <div class="card-title">👥 인물 등록</div>
+            <div class="hint">인물의 <b>얼굴 사진</b>과 이름을 등록하면, 일기 생성 시 AI가 사진 속 인물을 알아보고 이름(관계)으로 불러줍니다.</div>
+            <div class="row" style="margin-top:12px;">
+              <div class="field"><label>이름</label><input type="text" id="person-name" placeholder="예: 지민" /></div>
+              <div class="field"><label>관계 (선택)</label><input type="text" id="person-relation" placeholder="예: 딸" /></div>
+              <div class="field" style="flex:1; min-width:180px;"><label>메모 (선택)</label><input type="text" id="person-memo" placeholder="특징 등" /></div>
+            </div>
+            <div class="row" style="margin-top:10px; align-items:flex-end;">
+              <div class="field"><label>얼굴 사진 (정면 권장)</label><input type="file" id="person-photo" accept="image/*" /></div>
+              <button id="person-add" class="btn">＋ 인물 추가</button>
+            </div>
+            <div id="person-add-progress" class="hint" style="margin-top:8px;"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">등록된 인물</div>
+            <div id="people-list"><div class="hint">불러오는 중...</div></div>
           </div>
         </div>
 
@@ -205,16 +228,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=23"></script>
-  <script src="js/gapi_rest.js?v=23"></script>
-  <script src="js/drive.js?v=23"></script>
-  <script src="js/photos_picker.js?v=23"></script>
-  <script src="js/gemini.js?v=23"></script>
-  <script src="js/diary_store.js?v=23"></script>
-  <script src="js/migrate.js?v=23"></script>
-  <script src="js/diary.js?v=23"></script>
-  <script src="js/config_modal.js?v=23"></script>
-  <script src="js/main.js?v=23"></script>
+  <script src="js/auth.js?v=24"></script>
+  <script src="js/gapi_rest.js?v=24"></script>
+  <script src="js/drive.js?v=24"></script>
+  <script src="js/photos_picker.js?v=24"></script>
+  <script src="js/gemini.js?v=24"></script>
+  <script src="js/diary_store.js?v=24"></script>
+  <script src="js/people_store.js?v=24"></script>
+  <script src="js/migrate.js?v=24"></script>
+  <script src="js/diary.js?v=24"></script>
+  <script src="js/config_modal.js?v=24"></script>
+  <script src="js/main.js?v=24"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

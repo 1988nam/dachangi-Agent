@@ -96,5 +96,41 @@ const DiaryStore = (() => {
     return { added: rows.length, skipped };
   }
 
-  return { ensureSheet, loadEntries, saveEntry, bulkAppend, currentSheetId };
+  // 탭의 숫자 sheetId(gid) 조회 — 행 삭제(deleteDimension)에 필요
+  async function _tabSheetId(sid) {
+    const meta = await REST.sheetGet(sid, 'sheets.properties');
+    const sh = (meta.sheets || []).find(s => s.properties.title === TAB);
+    return sh ? sh.properties.sheetId : null;
+  }
+
+  function _findRow(values, date) {
+    const dates = (values || []).map(r => r[0]);
+    return dates.indexOf(date); // 0-based(데이터 기준), 실제 시트행 = idx+2
+  }
+
+  // 일기 본문만 수정(사진/날짜 유지)
+  async function updateText(date, text) {
+    const sid = await ensureSheet();
+    const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
+    const idx = _findRow(res.values, date);
+    if (idx === -1) throw new Error('해당 날짜의 일기를 찾을 수 없습니다.');
+    await REST.valuesUpdate(sid, `${TAB}!B${idx + 2}`, [[(text || '').slice(0, 45000)]]);
+    return { row: idx + 2 };
+  }
+
+  // 일기 한 줄 삭제
+  async function deleteByDate(date) {
+    const sid = await ensureSheet();
+    const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
+    const idx = _findRow(res.values, date);
+    if (idx === -1) throw new Error('해당 날짜의 일기를 찾을 수 없습니다.');
+    const sheetId = await _tabSheetId(sid);
+    if (sheetId == null) throw new Error('일기 탭을 찾을 수 없습니다.');
+    await REST.batchUpdate(sid, [{
+      deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: idx + 1, endIndex: idx + 2 } },
+    }]);
+    return { deleted: date };
+  }
+
+  return { ensureSheet, loadEntries, saveEntry, bulkAppend, currentSheetId, updateText, deleteByDate };
 })();

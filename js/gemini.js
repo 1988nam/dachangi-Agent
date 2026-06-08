@@ -123,12 +123,26 @@ const GeminiAPI = (() => {
     }
   }
 
-  // Top 사진들로 일기 생성
-  async function generateDiary(images, dateStr, promptTemplate) {
+  // Top 사진들로 일기 생성. people: [{name, relation, mime, data}] (선택) — 사진 속 인물 인지용 참조.
+  async function generateDiary(images, dateStr, promptTemplate, people) {
     let finalPrompt = (promptTemplate || '').replace(/\{\{DATE\}\}/g, dateStr);
     finalPrompt += `\n\n위 가이드라인을 바탕으로, 첨부된 ${images.length}장의 사진을 종합하여 하나의 매끄러운 일기를 작성해 줘.`
       + '\n[중요] 글이 중간에 끊기지 않도록 반드시 문장을 끝까지 완성하고, 기승전결이 있게 자연스럽게 마무리해.';
-    const parts = [{ text: finalPrompt }, ..._imageParts(images)];
+
+    const parts = [{ text: finalPrompt }];
+    const refs = (people || []).filter(p => p && p.data && p.name);
+    if (refs.length) {
+      parts.push({ text: '\n\n[등장 인물 참고] 아래는 자주 등장하는 인물들의 얼굴 사진과 이름이야. '
+        + '오늘의 일기 사진 속에 이 사람이 보이면 어색하지 않게 이름(또는 관계)으로 자연스럽게 불러줘. '
+        + '얼굴이 확실하지 않으면 억지로 이름을 붙이지 말고 추측하지 마.' });
+      refs.forEach(p => {
+        parts.push({ text: `· 인물: ${p.name}${p.relation ? ` (${p.relation})` : ''}` });
+        parts.push({ inline_data: { mime_type: p.mime || 'image/jpeg', data: p.data } });
+      });
+      parts.push({ text: '\n[오늘의 일기 사진] (아래 사진들로 일기를 작성)' });
+    }
+    parts.push(..._imageParts(images));
+
     const text = await _call(parts, { temperature: 0.5, maxOutputTokens: 8192 });
     return text;
   }
