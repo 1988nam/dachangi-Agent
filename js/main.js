@@ -19,6 +19,16 @@ function _todayMinus(days) {
 
 let _entriesCache = [];
 let _stagedPersonPhoto = '';
+
+// 모바일 사이드바(오프캔버스) 토글
+function _openSidebar() {
+  const sb = document.querySelector('.sidebar'); if (sb) sb.classList.add('open');
+  const ov = document.getElementById('sidebar-overlay'); if (ov) ov.classList.add('show');
+}
+function _closeSidebar() {
+  const sb = document.querySelector('.sidebar'); if (sb) sb.classList.remove('open');
+  const ov = document.getElementById('sidebar-overlay'); if (ov) ov.classList.remove('show');
+}
 function _esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 function onLoginSuccess(user) {
@@ -48,6 +58,7 @@ function showWrite() {
   document.getElementById('view-people').classList.add('hidden');
   document.querySelectorAll('.side-item').forEach(b => b.classList.toggle('active', b.dataset.view === 'write'));
   document.querySelectorAll('.month-row').forEach(b => b.classList.remove('active'));
+  _closeSidebar();
 }
 function _showMonthView() {
   document.getElementById('view-write').classList.add('hidden');
@@ -62,6 +73,7 @@ function showPeople() {
   document.querySelectorAll('.side-item').forEach(b => b.classList.remove('active'));
   const sp = document.getElementById('side-people'); if (sp) sp.classList.add('active');
   document.querySelectorAll('.month-row').forEach(b => b.classList.remove('active'));
+  _closeSidebar();
   renderPeopleList();
 }
 
@@ -323,6 +335,7 @@ async function showDate(date) {
   box.innerHTML = _entryCardsHtml([entry]);
   const item = box.querySelector('.hist-item');
   if (item) await _toggleEntry(item); // 단독 표시이므로 바로 펼침
+  _closeSidebar(); // 모바일: 날짜 선택하면 메뉴 닫고 본문 보기
 }
 
 // 엔트리 카드 펼치기/접기(+대표 사진 lazy 로드)
@@ -421,8 +434,12 @@ document.addEventListener('DOMContentLoaded', () => {
     Auth.login();
   });
   document.getElementById('login-config-btn').addEventListener('click', () => ConfigModal.open());
-  document.getElementById('side-settings').addEventListener('click', () => ConfigModal.open());
+  document.getElementById('side-settings').addEventListener('click', () => { _closeSidebar(); ConfigModal.open(); });
   document.getElementById('side-people').addEventListener('click', () => showPeople());
+  // 모바일 사이드바 토글
+  const _tg = document.getElementById('sidebar-toggle'); if (_tg) _tg.addEventListener('click', _openSidebar);
+  const _cl = document.getElementById('sidebar-close'); if (_cl) _cl.addEventListener('click', _closeSidebar);
+  const _ov = document.getElementById('sidebar-overlay'); if (_ov) _ov.addEventListener('click', _closeSidebar);
 
   // 인물 사진 스테이징(파일 업로드 또는 구글 포토 선택 공용)
   function _setStagedPersonPhoto(b64) {

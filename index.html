@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=29" />
+  <link rel="stylesheet" href="style.css?v=30" />
 </head>
 <body>
 
@@ -26,9 +26,14 @@
   <!-- 앱 -->
   <div id="app" class="hidden">
     <div class="layout">
+      <!-- 모바일 상단바 (햄버거) -->
+      <div class="mobile-topbar">
+        <button id="sidebar-toggle" class="icon-btn" aria-label="메뉴 열기">☰</button>
+        <span class="mobile-title">📔 다챙이</span>
+      </div>
       <!-- 왼쪽 사이드바 -->
       <aside class="sidebar">
-        <div class="side-logo">📔 다챙이 <span class="badge">AI 일기</span></div>
+        <div class="side-logo">📔 다챙이 <span class="badge">AI 일기</span><button id="sidebar-close" class="icon-btn sidebar-close" aria-label="메뉴 닫기">✕</button></div>
         <nav class="side-nav">
           <button class="side-item active" data-view="write">✍️ 새 일기 쓰기</button>
           <button class="side-item" id="side-people"><span>👥 인물 관리</span><span class="side-badge" id="people-badge" style="display:none;"></span></button>
@@ -122,6 +127,7 @@
         </div>
       </main>
     </div>
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
   </div>
 
   <!-- 설정 모달 -->
@@ -231,17 +237,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=29"></script>
-  <script src="js/gapi_rest.js?v=29"></script>
-  <script src="js/drive.js?v=29"></script>
-  <script src="js/photos_picker.js?v=29"></script>
-  <script src="js/gemini.js?v=29"></script>
-  <script src="js/diary_store.js?v=29"></script>
-  <script src="js/people_store.js?v=29"></script>
-  <script src="js/migrate.js?v=29"></script>
-  <script src="js/diary.js?v=29"></script>
-  <script src="js/config_modal.js?v=29"></script>
-  <script src="js/main.js?v=29"></script>
+  <script src="js/auth.js?v=30"></script>
+  <script src="js/gapi_rest.js?v=30"></script>
+  <script src="js/drive.js?v=30"></script>
+  <script src="js/photos_picker.js?v=30"></script>
+  <script src="js/gemini.js?v=30"></script>
+  <script src="js/diary_store.js?v=30"></script>
+  <script src="js/people_store.js?v=30"></script>
+  <script src="js/migrate.js?v=30"></script>
+  <script src="js/diary.js?v=30"></script>
+  <script src="js/config_modal.js?v=30"></script>
+  <script src="js/main.js?v=30"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
