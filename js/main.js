@@ -37,6 +37,7 @@ function onLoginSuccess(user) {
   }
   showWrite();
   renderMonthList();
+  updatePeopleBadge();
 }
 
 // ── 뷰 전환 ───────────────────────────────────────────────
@@ -87,7 +88,18 @@ function _fileToThumb(file, maxDim) {
   });
 }
 
-// 등록된 인물 목록 렌더
+// 메뉴 뱃지(미확인 인물 수) 갱신
+async function updatePeopleBadge() {
+  const badge = document.getElementById('people-badge');
+  if (!badge || typeof PeopleStore === 'undefined') return;
+  try {
+    const n = await PeopleStore.countPending();
+    if (n > 0) { badge.textContent = n; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+  } catch (_) {}
+}
+
+// 인물 목록 렌더 — 미확인(확인 필요) 섹션 + 등록된 인물 섹션
 async function renderPeopleList() {
   const box = document.getElementById('people-list');
   if (!box || typeof PeopleStore === 'undefined') return;
@@ -95,20 +107,54 @@ async function renderPeopleList() {
   let people;
   try { people = await PeopleStore.loadPeople(); }
   catch (e) { box.innerHTML = `<div class="hint" style="color:var(--red)">❌ ${_esc(e.message || e)}</div>`; return; }
-  if (!people.length) { box.innerHTML = '<div class="hint">등록된 인물이 없습니다. 위에서 추가하세요.</div>'; return; }
-  box.innerHTML = people.map(p => `
-    <div class="person-row" data-row="${p.rowIndex}">
-      <img class="person-face" src="${p.photo ? `data:image/jpeg;base64,${p.photo}` : ''}" alt="" />
-      <div class="person-info">
-        <div class="person-name">${_esc(p.name)}${p.relation ? ` <span class="person-rel">${_esc(p.relation)}</span>` : ''}</div>
-        ${p.memo ? `<div class="person-memo">${_esc(p.memo)}</div>` : ''}
-      </div>
-      <button class="btn btn-ghost person-del" style="padding:6px 10px;">🗑️</button>
-    </div>`).join('');
+  const pending = people.filter(p => !p.name);
+  const known = people.filter(p => p.name);
+
+  let html = '';
+  if (pending.length) {
+    html += `<div class="hint" style="margin:2px 0 8px; color:var(--amber);">🔔 확인 필요 — 일기 사진에서 처음 발견된 인물입니다. 누군지 이름을 입력하세요.</div>`;
+    html += pending.map(p => `
+      <div class="person-row pending" data-row="${p.rowIndex}">
+        <img class="person-face" src="${p.photo ? `data:image/jpeg;base64,${p.photo}` : ''}" alt="" />
+        <div class="person-info" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+          <input type="text" class="pend-name" placeholder="이름" style="width:110px;" />
+          <input type="text" class="pend-rel" placeholder="관계(선택)" style="width:110px;" />
+          <button class="btn pend-save" style="padding:6px 12px;">저장</button>
+        </div>
+        <button class="btn btn-ghost person-del" style="padding:6px 10px;" title="이 사람이 아니면 삭제">🗑️</button>
+      </div>`).join('');
+  }
+  if (known.length) {
+    if (pending.length) html += `<div class="side-sec" style="padding:14px 2px 6px;">등록된 인물</div>`;
+    html += known.map(p => `
+      <div class="person-row" data-row="${p.rowIndex}">
+        <img class="person-face" src="${p.photo ? `data:image/jpeg;base64,${p.photo}` : ''}" alt="" />
+        <div class="person-info">
+          <div class="person-name">${_esc(p.name)}${p.relation ? ` <span class="person-rel">${_esc(p.relation)}</span>` : ''}</div>
+          ${p.memo ? `<div class="person-memo">${_esc(p.memo)}</div>` : ''}
+        </div>
+        <button class="btn btn-ghost person-del" style="padding:6px 10px;">🗑️</button>
+      </div>`).join('');
+  }
+  if (!people.length) html = '<div class="hint">등록된 인물이 없습니다. 위에서 추가하거나, 일기를 만들면 새 인물이 자동으로 여기에 모입니다.</div>';
+  box.innerHTML = html;
+
+  // 미확인 → 이름 저장(확인 처리)
+  box.querySelectorAll('.pend-save').forEach(btn => btn.addEventListener('click', async () => {
+    const rowEl = btn.closest('.person-row');
+    const row = parseInt(rowEl.dataset.row, 10);
+    const name = rowEl.querySelector('.pend-name').value.trim();
+    const relation = rowEl.querySelector('.pend-rel').value.trim();
+    if (!name) { showToast('이름을 입력하세요.', 'error'); return; }
+    btn.disabled = true;
+    try { await PeopleStore.updatePerson(row, { name, relation, memo: '' }); showToast(`✅ '${name}' 등록 완료`); renderPeopleList(); updatePeopleBadge(); }
+    catch (e) { btn.disabled = false; showToast('저장 실패: ' + (e.message || e), 'error'); }
+  }));
+  // 삭제(미확인 오탐 제거 / 등록 인물 삭제)
   box.querySelectorAll('.person-del').forEach(btn => btn.addEventListener('click', async () => {
     const row = parseInt(btn.closest('.person-row').dataset.row, 10);
     if (!confirm('이 인물을 삭제할까요?')) return;
-    try { await PeopleStore.deleteByRow(row); showToast('🗑️ 삭제됨'); renderPeopleList(); }
+    try { await PeopleStore.deleteByRow(row); showToast('🗑️ 삭제됨'); renderPeopleList(); updatePeopleBadge(); }
     catch (e) { showToast('삭제 실패: ' + (e.message || e), 'error'); }
   }));
 }

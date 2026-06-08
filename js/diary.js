@@ -159,6 +159,7 @@ const DiaryAgent = (() => {
         _done(s, '시트에 자동 저장 완료');
         if (typeof renderMonthList === 'function') renderMonthList();
         showToast('✅ 일기 생성 + 자동 저장 완료!');
+        try { await _detectNewPeople(topImages); } catch (_) {} // 새 인물 자동 감지(비차단)
       } catch (e) {
         console.error('[Diary] 자동 저장 실패:', e);
         _done(s, '자동 저장 실패 — 💾 버튼으로 저장하세요');
@@ -207,6 +208,57 @@ const DiaryAgent = (() => {
       image.onerror = () => resolve('');
       image.src = `data:${img.mime};base64,${img.data}`;
     });
+  }
+
+  // 경계상자(box: [ymin,xmin,ymax,xmax] 0~1000)로 얼굴 부분을 잘라 작은 JPEG base64로
+  function _cropFace(img, box, outDim) {
+    outDim = outDim || 256;
+    return new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const W = image.width, H = image.height;
+          let x = (box[1] / 1000) * W, y = (box[0] / 1000) * H;
+          let w = Math.max(1, ((box[3] - box[1]) / 1000) * W);
+          let h = Math.max(1, ((box[2] - box[0]) / 1000) * H);
+          const px = w * 0.25, py = h * 0.25; // 여유 패딩
+          x = Math.max(0, x - px); y = Math.max(0, y - py);
+          w = Math.min(W - x, w + 2 * px); h = Math.min(H - y, h + 2 * py);
+          const scale = Math.min(1, outDim / Math.max(w, h));
+          const ow = Math.max(1, Math.round(w * scale)), oh = Math.max(1, Math.round(h * scale));
+          const c = document.createElement('canvas');
+          c.width = ow; c.height = oh;
+          c.getContext('2d').drawImage(image, x, y, w, h, 0, 0, ow, oh);
+          resolve(c.toDataURL('image/jpeg', 0.8).split(',')[1] || '');
+        } catch (_) { resolve(''); }
+      };
+      image.onerror = () => resolve('');
+      image.src = `data:${img.mime};base64,${img.data}`;
+    });
+  }
+
+  // 사진 속 '처음 보는 사람' 자동 감지 → 인물 DB 대기열에 추가(비차단 best-effort)
+  async function _detectNewPeople(topImages) {
+    if (typeof PeopleStore === 'undefined' || !GeminiAPI.detectNewFaces) return;
+    const s = _step('🔎 사진에서 새 인물 확인 중...', true);
+    let known = [];
+    try { known = await PeopleStore.loadAllFaces(); } catch (_) {}
+    let res;
+    try { res = await GeminiAPI.detectNewFaces(topImages, known); }
+    catch (e) { _done(s, '새 인물 확인 건너뜀'); return; }
+    const news = (res && res.new_faces) || [];
+    let added = 0;
+    for (const nf of news.slice(0, 3)) {
+      const img = topImages[(nf.image || 1) - 1];
+      if (!img || !Array.isArray(nf.box) || nf.box.length < 4) continue;
+      const crop = await _cropFace(img, nf.box, 256);
+      if (crop) { try { await PeopleStore.addPending(crop); added++; } catch (_) {} }
+    }
+    _done(s, added ? `처음 보는 인물 ${added}명 발견 → 인물 관리에서 이름 입력` : '새 인물 없음');
+    if (added) {
+      if (typeof updatePeopleBadge === 'function') updatePeopleBadge();
+      showToast(`👤 처음 보는 인물 ${added}명 발견! 👥 인물 관리에서 누군지 입력해 주세요.`);
+    }
   }
 
   function _render(dateStr, topImages, diary) {

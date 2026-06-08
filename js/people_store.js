@@ -37,7 +37,7 @@ const PeopleStore = (() => {
       memo: r[2] || '',
       photo: r[3] || '',
       createdAt: r[4] || '',
-    })).filter(p => p.name);
+    })).filter(p => p.name || p.photo); // 이름 없는 '미확인' 얼굴도 포함
   }
 
   async function addPerson(p) {
@@ -47,6 +47,30 @@ const PeopleStore = (() => {
     const row = [p.name || '', p.relation || '', p.memo || '', photo, new Date().toLocaleString('ko-KR')];
     await REST.valuesAppend(sid, `${TAB}!A:E`, [row]);
     return { added: p.name };
+  }
+
+  // 미확인 얼굴(이름 없이 사진만) 대기열에 추가
+  async function addPending(photo) {
+    return addPerson({ name: '', relation: '', memo: '', photo });
+  }
+
+  // 인물 정보(이름/관계/메모) 수정 — 사진은 유지
+  async function updatePerson(rowIndex, p) {
+    const sid = await _sid();
+    await REST.valuesUpdate(sid, `${TAB}!A${rowIndex}:C${rowIndex}`, [[p.name || '', p.relation || '', p.memo || '']]);
+    return { updated: rowIndex };
+  }
+
+  // 중복 감지용: 사진 있는 모든 얼굴(확인+미확인)
+  async function loadAllFaces() {
+    const people = await loadPeople();
+    return people.filter(p => p.photo).map(p => ({ rowIndex: p.rowIndex, name: p.name, mime: 'image/jpeg', data: p.photo }));
+  }
+
+  // 미확인(이름 없음) 인물 수 — 메뉴 뱃지용
+  async function countPending() {
+    const people = await loadPeople();
+    return people.filter(p => !p.name && p.photo).length;
   }
 
   async function deleteByRow(rowIndex) {
@@ -59,11 +83,11 @@ const PeopleStore = (() => {
     return { deleted: rowIndex };
   }
 
-  // Gemini 전달용: 사진 있는 인물만 {name, relation, mime, data}
+  // 일기 작성 참조용: 이름이 있는(확인된) 인물만
   async function loadForPrompt() {
     const people = await loadPeople();
-    return people.filter(p => p.photo).map(p => ({ name: p.name, relation: p.relation, mime: 'image/jpeg', data: p.photo }));
+    return people.filter(p => p.photo && p.name).map(p => ({ name: p.name, relation: p.relation, mime: 'image/jpeg', data: p.photo }));
   }
 
-  return { loadPeople, addPerson, deleteByRow, loadForPrompt };
+  return { loadPeople, addPerson, addPending, updatePerson, deleteByRow, loadForPrompt, loadAllFaces, countPending };
 })();
