@@ -72,13 +72,46 @@ const DiaryAgent = (() => {
     return st;
   }
 
+  // 날짜 → 포토 검색창용 검색어 ('2019년 5월 17일'). Picker는 항상 최신순이라
+  //  과거 사진은 검색이 가장 빠른 경로다(구글 공식 권장 UX).
+  function _photoSearchTerm(dateStr) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+    if (!m) return '';
+    return `${m[1]}년 ${parseInt(m[2], 10)}월 ${parseInt(m[3], 10)}일`;
+  }
+
   // 구글 포토 Picker로 직접 선택 → base64 [{mime,data,name,id:''}]
   //  포토 baseUrl은 만료되어 재참조 불가 → 히스토리 썸네일용 영구 id는 비움.
-  async function _gatherFromPhotos(cfg, candCount) {
+  async function _gatherFromPhotos(cfg, candCount, dateStr) {
+    // 과거 날짜 안내: 검색어를 미리 복사해 두고(제스처 컨텍스트), 안내 + 재복사 버튼 표시
+    const term = _photoSearchTerm(dateStr);
+    if (term) {
+      try { navigator.clipboard.writeText(term).catch(() => {}); } catch (_) {}
+      const tip = _step('', false);
+      if (tip) {
+        tip.innerHTML = `<span>💡</span><span>옛날 사진은 포토 창 <b>검색창</b>에 <b>「${term}」</b>을 붙여넣으면 바로 찾을 수 있어요(복사해 뒀어요). `
+          + `<button type="button" class="btn btn-ghost tip-copy" style="padding:2px 8px; font-size:11px;">📋 다시 복사</button></span>`;
+        const cb = tip.querySelector('.tip-copy');
+        if (cb) cb.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(term); showToast('📋 검색어 복사됨 — 포토 검색창에 붙여넣으세요.'); }
+          catch (_) { showToast('복사 실패 — 직접 입력해 주세요.', 'error'); }
+        });
+      }
+    }
+
     let s = _step('📷 구글 포토에서 사진 선택 창 여는 중...', true);
+    // 포토 창을 닫아버리면 폴링 타임아웃까지 잠기므로 명시적 취소 버튼 제공
+    const cancelRef = { cancelled: false };
+    const cstep = _step('', false);
+    if (cstep) {
+      cstep.innerHTML = `<span>✖</span><span><button type="button" class="btn btn-ghost picker-cancel" style="padding:2px 10px; font-size:11px;">선택 취소</button> 포토 창을 닫았다면 누르세요</span>`;
+      const cbtn = cstep.querySelector('.picker-cancel');
+      if (cbtn) cbtn.addEventListener('click', () => { cancelRef.cancelled = true; cbtn.disabled = true; cbtn.textContent = '취소 중...'; });
+    }
     let picked;
-    try { picked = await PhotosPicker.pick(msg => { if (s) s.querySelector('span:last-child').textContent = msg; }); }
+    try { picked = await PhotosPicker.pick(msg => { if (s) s.querySelector('span:last-child').textContent = msg; }, cancelRef); }
     catch (e) { _done(s, '선택 취소/실패'); showToast('사진 선택 실패: ' + (e.message || e), 'error'); return null; }
+    finally { if (cstep) cstep.remove(); }
     if (!picked || !picked.length) { _done(s, '선택된 사진 없음'); showToast('선택된 사진이 없습니다.', 'error'); return null; }
     // 해상도 메타가 있으면 큰 순으로 정렬 후 candCount장으로 제한(없으면 선택 순서 유지)
     picked.sort((a, b) => (b.width * b.height) - (a.width * a.height));
@@ -110,26 +143,34 @@ const DiaryAgent = (() => {
     _busy = true;
     _clearProgress();
     document.getElementById('result-card').style.display = 'none';
+    // 실패/취소로 중단될 때 직전 결과 카드를 되살려, 수정 중이던 텍스트 접근이 막히지 않게 한다
+    const restoreCard = () => { if (_last) { const rc = document.getElementById('result-card'); if (rc) rc.style.display = 'block'; } };
     const genBtn = document.getElementById('generate-btn');
     if (genBtn) { genBtn.disabled = true; }
 
     try {
+      // 파이프라인이 수 분 걸릴 수 있어, 토큰 잔여 수명이 짧으면 클릭 제스처 안에서 선제 갱신.
+      //  단 photos 소스는 갱신 팝업이 포토 선택 팝업의 제스처를 소모해 차단시키므로 건너뛴다
+      //  (포토 흐름 중 401은 photos_picker가 중단 처리하고, 이후 Drive/Sheets 호출은 _req가 401 자동 재시도).
+      if (source !== 'photos') { try { if (Auth.ensureFreshToken) await Auth.ensureFreshToken(10 * 60 * 1000); } catch (_) {} }
+
       const candImages = source === 'photos'
-        ? await _gatherFromPhotos(cfg, candCount)
+        ? await _gatherFromPhotos(cfg, candCount, dateStr)
         : await _gatherFromDrive(cfg, dateStr, candCount);
-      if (!candImages) return;
+      if (!candImages) { restoreCard(); return; }
 
       let s = _step('🤖 Gemini로 대표 사진 랭킹 중...', true);
-      const rankRes = await GeminiAPI.rankPhotos(candImages);
-      if (rankRes.skip) { _done(s, '적합한 사진 없음'); showToast(`일기 작성 SKIP: ${rankRes.reason || '적합한 사진 없음'}`, 'error'); return; }
-      // 1-based → 후보 인덱스 매핑
+      const rankRes = await GeminiAPI.rankPhotos(candImages, topCount);
+      if (rankRes.skip) { _done(s, '적합한 사진 없음'); showToast(`일기 작성 SKIP: ${rankRes.reason || '적합한 사진 없음'}`, 'error'); restoreCard(); return; }
+      // 1-based → 후보 인덱스 매핑 (중복 번호 응답 방어)
       const topImages = [];
+      const seen = new Set();
       for (const oneBased of rankRes.ranking) {
         const idx = oneBased - 1;
-        if (idx >= 0 && idx < candImages.length) topImages.push(candImages[idx]);
+        if (idx >= 0 && idx < candImages.length && !seen.has(idx)) { seen.add(idx); topImages.push(candImages[idx]); }
         if (topImages.length >= topCount) break;
       }
-      if (topImages.length === 0) { _done(s, '매핑된 사진 없음'); showToast('랭킹 결과를 사진에 매핑하지 못했습니다.', 'error'); return; }
+      if (topImages.length === 0) { _done(s, '매핑된 사진 없음'); showToast('랭킹 결과를 사진에 매핑하지 못했습니다.', 'error'); restoreCard(); return; }
       _done(s, `대표 사진 ${topImages.length}장 선정`);
 
       // 등록된 인물(얼굴+이름)을 참조로 전달 → 사진 속 인물 인지
@@ -139,7 +180,7 @@ const DiaryAgent = (() => {
       const style = await _resolveStyle(opts.style, dateStr);
       s = _step(`✍️ Gemini로 일기 작성 중...${people.length ? ` (인물 ${people.length}명 참조)` : ''}`, true);
       const diary = await GeminiAPI.generateDiary(topImages, dateStr, cfg.DIARY_PROMPT || '', people, style);
-      if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); return; }
+      if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); restoreCard(); return; }
       _done(s, '일기 작성 완료');
 
       // 사용자가 대표 사진을 직접 고를 수 있도록 후보 전체를 보관(기본 대표 = Gemini 1순위)
@@ -171,7 +212,10 @@ const DiaryAgent = (() => {
       _render(dateStr, allImages, repDefaultIdx, diary);
 
       // 자동 저장 (이후 결과 카드에서 텍스트 수정·대표 사진 변경 후 💾로 재등록 가능)
+      //  저장 중에는 💾 버튼을 잠가 자동 저장과의 동시 실행(중복 행)을 방지
       s = _step('💾 구글 시트에 자동 저장 중...', true);
+      const saveBtn = document.getElementById('save-diary-btn');
+      if (saveBtn) saveBtn.disabled = true;
       try {
         await DiaryStore.saveEntry({
           date: dateStr,
@@ -180,11 +224,13 @@ const DiaryAgent = (() => {
           photoIds: topImages.map(t => t.id).filter(Boolean),
           thumb: bestThumb || '',
         });
+        if (saveBtn) saveBtn.disabled = false;
         _done(s, '시트에 자동 저장 완료');
         if (typeof renderMonthList === 'function') renderMonthList();
         showToast('✅ 일기 생성 + 자동 저장 완료!');
         try { await _processFaces(topImages); } catch (_) {} // 인물 대조·감지(비차단)
       } catch (e) {
+        if (saveBtn) saveBtn.disabled = false;
         console.error('[Diary] 자동 저장 실패:', e);
         _done(s, '자동 저장 실패 — 💾 버튼으로 저장하세요');
         showToast('일기는 생성됐지만 자동 저장 실패: ' + (e.message || e), 'error');
@@ -192,6 +238,7 @@ const DiaryAgent = (() => {
     } catch (e) {
       console.error('[Diary] 실패:', e);
       showToast('❌ 생성 실패: ' + (e.message || e), 'error');
+      restoreCard();
     } finally {
       _busy = false;
       const b = document.getElementById('generate-btn'); if (b) b.disabled = false;
@@ -313,6 +360,19 @@ const DiaryAgent = (() => {
   function getLast() { return _last; }
   function setBestIndex(i) { if (_last) _last.bestIndex = i; }
 
+  // 히스토리에서 일기 날짜를 바꾸면 _last를 동기화 — 안 하면 💾가 옛 날짜로 중복 행을 만든다
+  function onEntryDateChanged(oldDate, newDate) {
+    if (_last && _last.dateStr === oldDate) _last.dateStr = newDate;
+  }
+  // 히스토리에서 일기를 삭제하면 _last를 무효화 — 안 하면 💾 한 번에 삭제한 일기가 부활한다
+  function onEntryDeleted(date) {
+    if (_last && _last.dateStr === date) {
+      _last = null;
+      const rc = document.getElementById('result-card');
+      if (rc) rc.style.display = 'none';
+    }
+  }
+
   // 같은 사진(직전 생성의 대표 후보)으로 본문만 다시 생성 — 문체·어투 변경을 빠르게 비교.
   //  자동 저장하지 않음: 마음에 들면 💾 버튼으로 등록.
   async function regenerateText(styleOpts) {
@@ -346,21 +406,30 @@ const DiaryAgent = (() => {
   }
 
   // 결과 카드의 수정 텍스트 + 선택한 대표 사진으로 최종 등록(같은 날짜 덮어쓰기)
+  let _finalizing = false;
   async function finalize(text) {
     if (!_last) throw new Error('생성된 일기가 없습니다.');
-    const { dateStr, allImages, topImages, source } = _last;
-    const idx = _last.bestIndex || 0;
+    if (_finalizing) throw new Error('등록이 이미 진행 중입니다.');
+    _finalizing = true;
+    try {
+      return await _finalizeImpl(text);
+    } finally { _finalizing = false; }
+  }
+  async function _finalizeImpl(text) {
+    const snap = _last; // 도중에 onEntryDeleted 등이 _last를 null로 바꿔도 동일 객체를 끝까지 참조(크래시 방지)
+    const { dateStr, allImages, topImages, source } = snap;
+    const idx = snap.bestIndex || 0;
     const rep = allImages[idx];
     let bestId = '';
     let thumb = '';
     if (source === 'photos') {
-      if (_last._uploadCache[idx]) {
-        bestId = _last._uploadCache[idx]; // 이미 업로드한 후보면 재사용
+      if (snap._uploadCache[idx]) {
+        bestId = snap._uploadCache[idx]; // 이미 업로드한 후보면 재사용
       } else if (rep) {
         try {
           const hi = rep.baseUrl ? await PhotosPicker.fetchImageBase64(rep.baseUrl, 2048) : { mime: rep.mime, data: rep.data };
           bestId = await DriveAPI.uploadPhoto(`${dateStr} 대표.jpg`, hi.data, hi.mime);
-          _last._uploadCache[idx] = bestId;
+          snap._uploadCache[idx] = bestId;
         } catch (e) {
           console.warn('[Diary] finalize 업로드 실패, 시트 썸네일 폴백:', e);
           try { thumb = await _makeThumb(rep, 512); } catch (_) {}
@@ -376,11 +445,11 @@ const DiaryAgent = (() => {
       photoIds: topImages.map(t => t.id).filter(Boolean),
       thumb: thumb,
     });
-    _last.diary = text;
-    _last.bestId = bestId;
-    _last.bestThumb = thumb;
+    snap.diary = text;
+    snap.bestId = bestId;
+    snap.bestThumb = thumb;
     return { ok: true };
   }
 
-  return { run, getLast, setBestIndex, finalize, regenerateText };
+  return { run, getLast, setBestIndex, finalize, regenerateText, onEntryDateChanged, onEntryDeleted };
 })();

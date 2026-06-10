@@ -14,7 +14,12 @@ const PeopleStore = (() => {
 
   async function _sid() { return await DiaryStore.ensureSheet(); }
 
-  async function _ensureTab(sid) {
+  let _tabP = null; // 동시 호출이 '인물' 탭을 중복 생성(400)하는 경합 방지 — 세션당 1회만 확인
+  function _ensureTab(sid) {
+    if (!_tabP) _tabP = _ensureTabImpl(sid).catch(e => { _tabP = null; throw e; });
+    return _tabP;
+  }
+  async function _ensureTabImpl(sid) {
     const meta = await REST.sheetGet(sid, 'sheets.properties.title');
     const titles = (meta.sheets || []).map(s => s.properties.title);
     if (!titles.includes(TAB)) {
@@ -105,9 +110,17 @@ const PeopleStore = (() => {
   }
 
   // 대조용: 사진 있는 모든 얼굴(확인/관찰/대기 전부) {rowIndex, name, count, mime, data}
+  //  Gemini 대조는 앞쪽 25명만 쓰므로(gemini.js analyzeFaces), 이름 있는 인물 → 감지횟수 많은 순으로
+  //  정렬해 관찰 행이 늘어나도 확인된 인물이 대조 대상에서 밀려나지 않게 한다.
   async function loadAllFaces() {
     const people = await loadPeople();
-    return people.filter(p => p.photo).map(p => ({ rowIndex: p.rowIndex, name: p.name, count: p.count, mime: 'image/jpeg', data: p.photo }));
+    return people.filter(p => p.photo)
+      .sort((a, b) => {
+        const an = a.name ? 1 : 0, bn = b.name ? 1 : 0;
+        if (an !== bn) return bn - an;
+        return (b.count || 0) - (a.count || 0);
+      })
+      .map(p => ({ rowIndex: p.rowIndex, name: p.name, count: p.count, mime: 'image/jpeg', data: p.photo }));
   }
 
   // 확인 필요(pending) 인물 수 — 메뉴 뱃지용

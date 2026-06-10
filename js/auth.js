@@ -12,6 +12,31 @@ const Auth = (() => {
   let _silentRefresh = false;
   let _loggedIn = false;       // 앱 진입(로그인 콜백 발화) 여부 — 중복 발화/배경 갱신 구분
   let _silentAttempted = false; // 로드 시 조용한 재로그인 1회만 시도
+  let _refreshWaiters = [];    // refreshToken() 대기자 — 토큰 콜백에서 일괄 settle
+
+  function _settleWaiters(err, token) {
+    const ws = _refreshWaiters; _refreshWaiters = [];
+    ws.forEach(w => err ? w.reject(err) : w.resolve(token));
+  }
+
+  // 토큰을 즉시 갱신(프로미스). 동시 호출은 한 번의 requestAccessToken으로 합쳐진다.
+  function refreshToken() {
+    return new Promise((resolve, reject) => {
+      if (!tokenClient) return reject(new Error('GIS 미초기화 — 설정을 먼저 완료하세요.'));
+      _refreshWaiters.push({ resolve, reject });
+      if (_refreshWaiters.length > 1) return; // 이미 진행 중
+      _silentRefresh = true;
+      try { tokenClient.requestAccessToken({ prompt: '' }); }
+      catch (e) { _silentRefresh = false; _settleWaiters(e); }
+    });
+  }
+
+  // 토큰 잔여 수명이 minRemainMs보다 짧으면 선제 갱신(긴 파이프라인 시작 전 호출용)
+  function ensureFreshToken(minRemainMs) {
+    const exp = parseInt(localStorage.getItem('dachangi_token_expiry') || '0', 10);
+    if (accessToken && exp && exp - Date.now() > (minRemainMs || 60 * 1000)) return Promise.resolve(accessToken);
+    return refreshToken();
+  }
 
   function _scheduleTokenRefresh(expiryMs) {
     if (_refreshTimer) clearTimeout(_refreshTimer);
@@ -46,6 +71,8 @@ const Auth = (() => {
         if (tokenResponse.error !== undefined) {
           _silentRefresh = false;
           console.warn('[Auth] 토큰 요청 오류:', tokenResponse.error);
+          _settleWaiters(new Error('토큰 갱신 실패: ' + tokenResponse.error));
+          if (_loggedIn && typeof showToast === 'function') showToast('로그인이 만료되었습니다 — 로그아웃 후 다시 로그인해 주세요.', 'error');
           return;
         }
         accessToken = tokenResponse.access_token;
@@ -55,6 +82,7 @@ const Auth = (() => {
         gapi.client.setToken({ access_token: accessToken });
         _scheduleTokenRefresh(expiry);
         _silentRefresh = false;
+        _settleWaiters(null, accessToken);
         if (!_loggedIn) {
           _loggedIn = true;
           console.log('✅ 구글 로그인 완료.');
@@ -62,6 +90,13 @@ const Auth = (() => {
         } else {
           console.log('🔄 액세스 토큰 자동 갱신 완료.');
         }
+      },
+      // 팝업 차단·창 닫힘 등은 callback이 아니라 여기로만 옴 — 없으면 완전 무음 실패
+      error_callback: (err) => {
+        _silentRefresh = false;
+        console.warn('[Auth] GIS 오류:', err && err.type);
+        _settleWaiters(new Error('토큰 갱신 실패: ' + ((err && err.type) || 'unknown')));
+        if (_loggedIn && typeof showToast === 'function') showToast('로그인 연장에 실패했습니다 — 로그아웃 후 다시 로그인해 주세요.', 'error');
       },
     });
     gisInited = true;
@@ -118,7 +153,14 @@ const Auth = (() => {
   function isLoggedIn() { return !!accessToken; }
   function getToken() { return accessToken; }
 
-  return { initGapi, initGis, login, logout, onLogin, onLogout, isLoggedIn, getToken };
+  // 탭 복귀 시 만료/임박 토큰 즉시 갱신 — 절전·백그라운드로 setTimeout이 못 깨어난 경우 보완
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !_loggedIn) return;
+    const exp = parseInt(localStorage.getItem('dachangi_token_expiry') || '0', 10);
+    if (!exp || exp - Date.now() < 5 * 60 * 1000) refreshToken().catch(() => {});
+  });
+
+  return { initGapi, initGis, login, logout, onLogin, onLogout, isLoggedIn, getToken, refreshToken, ensureFreshToken };
 })();
 
 function gapiLoaded() { Auth.initGapi(); }

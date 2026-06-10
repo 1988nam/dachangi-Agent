@@ -11,6 +11,15 @@ const DiaryStore = (() => {
   const LS_ID = 'dachangi_diary_sheet_id';
   const MAX_THUMB = 48000; // 시트 셀 한도(5만자) 안전 여유
 
+  let _ensureP = null;            // ensureSheet 세션 캐시 — 동시 호출이 시트를 2개 만드는 경합 방지
+  let _writeQ = Promise.resolve(); // 쓰기 직렬화 큐 — read-then-write 경합으로 같은 날짜 행 중복 방지
+
+  function _serial(fn) {
+    const r = _writeQ.then(fn, fn);
+    _writeQ = r.catch(() => {});
+    return r;
+  }
+
   function currentSheetId() {
     const cfg = window.DACHANGI_CONFIG || {};
     const fromCfg = REST.extractId(cfg.DIARY_SHEET_ID || '');
@@ -26,15 +35,49 @@ const DiaryStore = (() => {
     }
   }
 
-  // 시트 확보(없으면 자동 생성) → spreadsheetId 반환
-  async function ensureSheet() {
-    let sid = currentSheetId();
-    if (sid) { await _ensureTab(sid); return sid; }
+  // 시트가 휴지통에 있으면 그대로 쓰다가 30일 후 일기 전체가 영구 삭제됨 — Drive 메타로 확인.
+  //  Drive 조회 자체가 실패하면(공유 드라이브 권한 등) 휴지통 판단을 보류하고 접근성은 Sheets API(_ensureTab)에 맡긴다.
+  async function _assertNotTrashed(sid) {
+    let meta;
+    try { meta = await REST.driveGet(sid, 'id,trashed'); }
+    catch (_) { return; }
+    if (meta && meta.trashed) throw new Error('일기 DB 시트가 휴지통에 있습니다. 드라이브 휴지통에서 복원하세요.');
+  }
+
+  async function _ensureImpl() {
+    const cfg = window.DACHANGI_CONFIG || {};
+    const fromCfg = REST.extractId(cfg.DIARY_SHEET_ID || '');
+    const sidExisting = fromCfg || localStorage.getItem(LS_ID) || '';
+    if (sidExisting) {
+      try {
+        await _assertNotTrashed(sidExisting);
+        await _ensureTab(sidExisting);
+        return sidExisting;
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        // 설정에 명시한 시트는 사용자가 지정한 것 — 임의로 새로 만들지 않고 명확히 알림
+        if (fromCfg) throw new Error(`설정의 일기 시트에 접근할 수 없습니다 — 삭제/휴지통/계정 권한을 확인하세요. [원본] ${msg}`);
+        // 캐시(자동 생성) ID는 확정적 사용 불가일 때만 폴백해 새 시트를 만든다(끝의 setItem이 캐시를 덮어씀).
+        //  · 휴지통 / 404(삭제·Drive 접근불가) / 403+권한거부(다른 계정 로그인 — Sheets는 이때 403 PERMISSION_DENIED)
+        //  일시적 오류(네트워크·401만료·403쿼터·429·5xx)는 캐시를 보존한 채 그대로 전파 —
+        //  빈 새 시트로 포크되어 기존 일기 히스토리가 사라지는 것을 막는다.
+        const is403Perm = /\(403\)/.test(msg) && /permission|PERMISSION_DENIED|insufficient|forbidden/i.test(msg);
+        const definitive = /휴지통/.test(msg) || /\(404\)/.test(msg) || is403Perm;
+        if (!definitive) throw e;
+        console.warn('[DiaryStore] 캐시된 시트 사용 불가(확정) → 새 시트 생성:', msg);
+      }
+    }
     const created = await REST.createSpreadsheet({ properties: { title: '다챙이 일기 DB' }, sheets: [{ properties: { title: TAB } }] });
-    sid = created.spreadsheetId;
+    const sid = created.spreadsheetId;
     await REST.valuesUpdate(sid, `${TAB}!A1:F1`, [HEADER]);
     localStorage.setItem(LS_ID, sid);
     return sid;
+  }
+
+  // 시트 확보(없으면 자동 생성) → spreadsheetId 반환. 동시/반복 호출은 같은 프라미스 재사용.
+  function ensureSheet() {
+    if (!_ensureP) _ensureP = _ensureImpl().catch(e => { _ensureP = null; throw e; });
+    return _ensureP;
   }
 
   // 전체 일기 로드(최신순)
@@ -54,7 +97,7 @@ const DiaryStore = (() => {
   }
 
   // 같은 날짜 있으면 업데이트, 없으면 추가
-  async function saveEntry(entry) {
+  async function _saveEntryImpl(entry) {
     const sid = await ensureSheet();
     const thumb = (entry.thumb || '').length <= MAX_THUMB ? (entry.thumb || '') : '';
     const rowVals = [
@@ -78,7 +121,7 @@ const DiaryStore = (() => {
   }
 
   // 여러 일기 일괄 추가(이관용). 이미 있는 날짜는 스킵. 날짜 오름차순.
-  async function bulkAppend(entries) {
+  async function _bulkAppendImpl(entries) {
     const sid = await ensureSheet();
     const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
     const existing = new Set((res.values || []).map(r => r[0]));
@@ -109,7 +152,7 @@ const DiaryStore = (() => {
   }
 
   // 일기 본문만 수정(사진/날짜 유지)
-  async function updateText(date, text) {
+  async function _updateTextImpl(date, text) {
     const sid = await ensureSheet();
     const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
     const idx = _findRow(res.values, date);
@@ -119,7 +162,7 @@ const DiaryStore = (() => {
   }
 
   // 날짜 + 본문 수정. 새 날짜가 다른 일기와 겹치면 거부.
-  async function updateEntry(oldDate, newDate, text) {
+  async function _updateEntryImpl(oldDate, newDate, text) {
     const sid = await ensureSheet();
     const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
     const dates = (res.values || []).map(r => r[0]);
@@ -135,7 +178,7 @@ const DiaryStore = (() => {
   }
 
   // 일기 한 줄 삭제
-  async function deleteByDate(date) {
+  async function _deleteByDateImpl(date) {
     const sid = await ensureSheet();
     const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
     const idx = _findRow(res.values, date);
@@ -148,5 +191,13 @@ const DiaryStore = (() => {
     return { deleted: date };
   }
 
-  return { ensureSheet, loadEntries, saveEntry, bulkAppend, currentSheetId, updateText, updateEntry, deleteByDate };
+  // 모든 쓰기는 직렬화 큐를 거친다 — 자동 저장 vs 💾 수동 저장 동시 실행 등으로 인한 중복 행 방지
+  return {
+    ensureSheet, loadEntries, currentSheetId,
+    saveEntry: (entry) => _serial(() => _saveEntryImpl(entry)),
+    bulkAppend: (entries) => _serial(() => _bulkAppendImpl(entries)),
+    updateText: (date, text) => _serial(() => _updateTextImpl(date, text)),
+    updateEntry: (oldDate, newDate, text) => _serial(() => _updateEntryImpl(oldDate, newDate, text)),
+    deleteByDate: (date) => _serial(() => _deleteByDateImpl(date)),
+  };
 })();

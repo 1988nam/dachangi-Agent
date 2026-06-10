@@ -40,15 +40,42 @@ const GeminiAPI = (() => {
   async function _call(parts, generationConfig) {
     const model = _cfg().GEMINI_MODEL || 'gemini-2.5-flash';
     const base = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    const res = await _gFetch(base, JSON.stringify({ contents: [{ parts }], generationConfig }));
+
+    // thinkingBudget:0 은 2.5-flash 계열에서만 유효 — 2.5-pro는 thinking을 끌 수 없고(400),
+    // 1.5/gemma 등은 thinkingConfig 필드 자체를 거부한다. 그 외 모델엔 보내지 않는다.
+    let gc = generationConfig;
+    if (gc && gc.thinkingConfig && !/gemini-2\.5-flash/.test(model)) {
+      gc = { ...gc }; delete gc.thinkingConfig;
+    }
+
+    let res = await _gFetch(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc }));
+    if (!res.ok && res.status === 400 && gc && gc.thinkingConfig) {
+      // '모델 불러오기'로 추가된 임의 모델 방어: thinking 관련 400이면 빼고 1회 재시도
+      let body = ''; try { body = await res.text(); } catch (_) {}
+      if (/think/i.test(body)) {
+        const gc2 = { ...gc }; delete gc2.thinkingConfig;
+        res = await _gFetch(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc2 }));
+      } else {
+        throw new Error(`Gemini 오류 (400) ${body.slice(0, 200)}`);
+      }
+    }
     if (!res.ok) {
       let body = ''; try { body = await res.text(); } catch (_) {}
       throw new Error(`Gemini 오류 (${res.status}) ${body.slice(0, 200)}`);
     }
     const json = await res.json();
+    // 빈 응답을 조용히 ''로 돌리면 'AI가 SKIP'으로 오표시됨 — 차단/절단 사유를 구분해 알린다
+    const pf = json.promptFeedback;
+    if (pf && pf.blockReason) throw new Error(`Gemini가 요청을 차단했습니다 (사유: ${pf.blockReason}) — 다른 사진으로 시도해 보세요.`);
     const cand = json.candidates && json.candidates[0];
-    const text = (cand && cand.content && cand.content.parts || [])
+    if (!cand) throw new Error('Gemini 응답에 결과가 없습니다 — 잠시 후 다시 시도하세요.');
+    const text = (cand.content && cand.content.parts || [])
       .filter(p => p && p.text).map(p => p.text).join('').trim();
+    if (!text) {
+      const fr = cand.finishReason || '';
+      if (fr === 'MAX_TOKENS') throw new Error('Gemini 출력이 토큰 한도에서 끊겼습니다 — 다시 시도하거나 모델을 바꿔보세요.');
+      if (fr && fr !== 'STOP') throw new Error(`Gemini가 응답을 완성하지 못했습니다 (사유: ${fr})`);
+    }
     return text || '';
   }
 
@@ -88,11 +115,14 @@ const GeminiAPI = (() => {
   }
 
   // 1차 후보 중 대표 사진 랭킹 → { ranking:[1-based...], skip, reason }
-  async function rankPhotos(images) {
+  //  topCount: 원하는 대표 사진 수(1~5). 프롬프트 예시를 동적으로 만들어 그 수만큼 받아낸다.
+  async function rankPhotos(images, topCount) {
     if (!images.length) return { ranking: [], skip: true, reason: '사진 없음' };
+    const k = Math.max(1, Math.min(5, topCount || 3, images.length));
+    const example = Array.from({ length: k }, (_, i) => `${i + 1}위번호`).join(', ');
     const prompt = [
       `아래 ${images.length}장의 사진은 같은 날 촬영된 사진들이야.`,
-      "이 중에서 '오늘 하루를 기록하는 일기의 대표 사진'으로 가장 적합한 것들을 골라줘.",
+      `이 중에서 '오늘 하루를 기록하는 일기의 대표 사진'으로 가장 적합한 것을 ${k}장 골라줘.`,
       '',
       '【선택 기준 — 우선순위 순서】',
       '1순위: 사람이 등장하는 사진 (표정, 행동, 모임, 셀피 등)',
@@ -103,9 +133,9 @@ const GeminiAPI = (() => {
       '- 단순 제품·포장지 클로즈업, 영수증/바코드/택배 라벨/가격표',
       '- 스크린샷 또는 모니터/화면 촬영, 배경 없는 실내 사물만, 의미 없는 벽/바닥',
       '',
-      `사진은 1번부터 ${images.length}번 순서로 첨부됩니다.`,
+      `사진은 1번부터 ${images.length}번 순서로 첨부됩니다. 같은 번호를 두 번 쓰지 마.`,
       '반드시 아래 JSON 형식으로만 답하세요. 다른 말은 절대 하지 마세요.',
-      '선택 가능: {"ranking": [1위번호, 2위번호, 3위번호]}',
+      `선택 가능: {"ranking": [${example}]}`,
       '선택 불가: {"ranking": [], "skip": true, "reason": "이유"}',
     ].join('\n');
 

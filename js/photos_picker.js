@@ -96,8 +96,9 @@ const PhotosPicker = (() => {
 
   // 전체 흐름: 세션 생성 → 포토 창 열기 → 선택 폴링 → 선택 항목 반환
   //  주의: 선택이 끝나기 전엔 세션을 절대 삭제하지 않는다(삭제하면 포토가 "다시 연결하세요" 에러).
-  //  창 닫힘(win.closed)은 모바일에서 오판이 잦아 취소 근거로 쓰지 않고, 오직 mediaItemsSet/타임아웃으로 판단.
-  async function pick(onProgress) {
+  //  창 닫힘(win.closed)은 모바일에서 오판이 잦아 취소 근거로 쓰지 않고, 오직 mediaItemsSet/타임아웃/명시적 취소로 판단.
+  //  cancelRef: {cancelled:boolean} — 호출측이 취소 버튼으로 true로 바꾸면 폴링을 중단한다.
+  async function pick(onProgress, cancelRef) {
     const log = onProgress || (() => {});
     // 팝업은 사용자 제스처 직후 동기로 먼저 열어 차단을 피한다(이후 location만 교체).
     const win = window.open('about:blank', 'dachangi_gphoto', 'width=480,height=720');
@@ -113,16 +114,35 @@ const PhotosPicker = (() => {
     else { window.open(session.pickerUri, '_blank'); }
 
     const interval = Math.max(1500, _secs(session.pollingConfig && session.pollingConfig.pollInterval, 3000));
-    const timeout = Math.min(_secs(session.pollingConfig && session.pollingConfig.timeoutIn, 300000), 600000);
+    // 구글이 준 세션 폴링 수명(통상 30분)을 그대로 존중 — 짧게 자르면 오래 고르는 사용자의 선택이 유실됨
+    const timeout = Math.min(_secs(session.pollingConfig && session.pollingConfig.timeoutIn, 1800000), 1800000);
     const start = Date.now();
     log('🖼️ 포토 창에서 사진을 고르고 "완료"를 누른 뒤, 이 화면으로 돌아오세요...');
 
     let done = false;
     while (Date.now() - start <= timeout) {
       await new Promise(r => setTimeout(r, interval));
+      if (cancelRef && cancelRef.cancelled) {
+        if (win && !win.closed) { try { win.close(); } catch (_) {} }
+        deleteSession(session.id);
+        throw new Error('사진 선택을 취소했습니다.');
+      }
       let st = null;
-      try { st = await getSession(session.id); } catch (_) { continue; } // 일시 오류는 계속 폴링
+      try { st = await getSession(session.id); }
+      catch (e) {
+        // 토큰 만료 등 회복 불가 오류는 타임아웃까지 헛폴링하지 않고 즉시 중단
+        if (/\((401|403)\)/.test(String((e && e.message) || ''))) {
+          if (win && !win.closed) { try { win.close(); } catch (_) {} }
+          throw new Error('로그인이 만료되었습니다 — 다시 로그인한 뒤 시도하세요.');
+        }
+        continue; // 일시 오류는 계속 폴링
+      }
       if (st && st.mediaItemsSet) { done = true; break; }
+    }
+
+    if (!done) {
+      // 타임아웃 직전에 "완료"를 눌렀을 수 있으므로 마지막으로 한 번 더 확인
+      try { const st = await getSession(session.id); if (st && st.mediaItemsSet) done = true; } catch (_) {}
     }
 
     if (win && !win.closed) { try { win.close(); } catch (_) {} }
@@ -147,12 +167,22 @@ const PhotosPicker = (() => {
     return btoa(binary);
   }
 
+  // 401 1회 갱신·재시도 래퍼 — 사진 선택~다운로드가 수 분 걸려 도중 토큰이 만료될 수 있음
+  async function _authedFetch(url, _retried) {
+    const res = await fetch(url, { headers: _bearer() });
+    if (res.status === 401 && !_retried && Auth.refreshToken) {
+      try { await Auth.refreshToken(); } catch (_) { return res; }
+      return _authedFetch(url, true);
+    }
+    return res;
+  }
+
   // baseUrl 사진 바이트 → base64 (프록시 경유, JPEG로 정규화)
   async function fetchImageBase64(baseUrl, maxDim) {
     maxDim = maxDim || 1024;
     const sized = `${baseUrl}=w${maxDim}-h${maxDim}`;
     const proxied = `/api/photo?url=${encodeURIComponent(sized)}`;
-    const res = await fetch(proxied, { headers: _bearer() });
+    const res = await _authedFetch(proxied);
     if (!res.ok) throw new Error(`사진 다운로드 실패 (${res.status})`);
     const blob = await res.blob();
     try {

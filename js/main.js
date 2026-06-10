@@ -159,6 +159,13 @@ async function renderPeopleList() {
   if (!pending.length && !known.length) html = '<div class="hint">등록된 인물이 없습니다. 위에서 추가하거나, 일기를 만들면 자주 등장하는 인물이 자동으로 여기에 모입니다.</div>';
   box.innerHTML = html;
 
+  // 행 조작(삭제/저장/그룹) 중엔 목록 전체를 잠근다 — 시트는 행 번호 주소라, 삭제 직후
+  // stale rowIndex로 다른 행을 누르면 엉뚱한 인물이 지워지거나 덮어써진다.
+  //  성공 시: 재렌더로 새 rowIndex 반영. 실패 시: 행 수가 안 바뀌어 rowIndex가 유효하므로
+  //  재렌더 대신 잠금만 해제해 사용자가 입력 중이던 값(이름/관계 등)을 보존하고 즉시 재시도하게 한다.
+  const lockList = () => box.querySelectorAll('button, select, input').forEach(el => { el.disabled = true; });
+  const unlockList = () => box.querySelectorAll('button, select, input').forEach(el => { el.disabled = false; });
+
   // 미확인 → 이름·그룹 저장(확인 처리)
   box.querySelectorAll('.pend-save').forEach(btn => btn.addEventListener('click', async () => {
     const rowEl = btn.closest('.person-row');
@@ -167,25 +174,27 @@ async function renderPeopleList() {
     const relation = rowEl.querySelector('.pend-rel').value.trim();
     const group = rowEl.querySelector('.pend-group').value;
     if (!name) { showToast('이름을 입력하세요.', 'error'); return; }
-    btn.disabled = true;
+    lockList();
     try {
       await PeopleStore.updatePerson(row, { name, relation, memo: '' });
       if (group) await PeopleStore.setGroup(row, group);
       showToast(`✅ '${name}' 등록 완료`); renderPeopleList(); updatePeopleBadge();
-    } catch (e) { btn.disabled = false; showToast('저장 실패: ' + (e.message || e), 'error'); }
+    } catch (e) { showToast('저장 실패: ' + (e.message || e), 'error'); unlockList(); }
   }));
   // 그룹 변경(등록된 인물)
   box.querySelectorAll('.pgroup').forEach(sel => sel.addEventListener('change', async () => {
     const row = parseInt(sel.closest('.person-row').dataset.row, 10);
+    lockList();
     try { await PeopleStore.setGroup(row, sel.value); showToast('그룹 변경됨'); renderPeopleList(); }
-    catch (e) { showToast('그룹 변경 실패: ' + (e.message || e), 'error'); }
+    catch (e) { showToast('그룹 변경 실패: ' + (e.message || e), 'error'); unlockList(); }
   }));
   // 삭제
   box.querySelectorAll('.person-del').forEach(btn => btn.addEventListener('click', async () => {
     const row = parseInt(btn.closest('.person-row').dataset.row, 10);
     if (!confirm('이 인물을 삭제할까요?')) return;
+    lockList();
     try { await PeopleStore.deleteByRow(row); showToast('🗑️ 삭제됨'); renderPeopleList(); updatePeopleBadge(); }
-    catch (e) { showToast('삭제 실패: ' + (e.message || e), 'error'); }
+    catch (e) { showToast('삭제 실패: ' + (e.message || e), 'error'); unlockList(); }
   }));
 }
 
@@ -221,6 +230,9 @@ function _renderViewMode(item, date) {
   const body = item.querySelector('.hist-body');
   const actions = item.querySelector('.hist-actions');
   if (body) { body.textContent = entry ? entry.text : ''; body.style.whiteSpace = 'pre-wrap'; }
+  // 접힌 미리보기도 갱신 — 안 하면 수정 저장 후 접었을 때 옛 텍스트가 보임
+  const pv = item.querySelector('.hist-preview');
+  if (pv && entry) pv.textContent = entry.text.slice(0, 140) + (entry.text.length > 140 ? '…' : '');
   if (actions) actions.innerHTML = `<button class="btn btn-ghost hist-edit" style="padding:6px 12px;">✏️ 수정</button><button class="btn btn-ghost hist-del" style="padding:6px 12px;">🗑️ 삭제</button>`;
 }
 async function _saveEdit(item, date) {
@@ -235,6 +247,8 @@ async function _saveEdit(item, date) {
   try {
     await DiaryStore.updateEntry(date, newDate, newText);
     if (newDate !== date) {
+      // 결과 카드(_last)의 날짜도 동기화 — 안 하면 💾가 옛 날짜로 일기를 부활시킴
+      if (typeof DiaryAgent !== 'undefined' && DiaryAgent.onEntryDateChanged) DiaryAgent.onEntryDateChanged(date, newDate);
       showToast('✅ 날짜·내용이 수정되었습니다.');
       await renderMonthList();   // 날짜 변경 → 목록/달 그룹 재구성
       showDate(newDate);
@@ -253,6 +267,7 @@ async function _deleteDiary(item, date) {
   if (!confirm(`${date} 일기를 삭제할까요?\n되돌릴 수 없습니다.`)) return;
   try {
     await DiaryStore.deleteByDate(date);
+    if (typeof DiaryAgent !== 'undefined' && DiaryAgent.onEntryDeleted) DiaryAgent.onEntryDeleted(date);
     showToast('🗑️ 일기가 삭제되었습니다.');
     await renderMonthList();
     showWrite();
@@ -374,6 +389,10 @@ function renderSearch(q) {
 async function renderMonthList() {
   const listEl = document.getElementById('month-list');
   if (!listEl || typeof DiaryStore === 'undefined') return;
+  // innerHTML 교체 전에 현재 상태(활성 월·펼친 달)를 보존해 두고 아래에서 복원
+  const prevActiveEl = document.querySelector('.month-row.active');
+  const prevMonth = prevActiveEl ? prevActiveEl.dataset.month : '';
+  const prevOpen = Array.from(listEl.querySelectorAll('.date-sub.open')).map(s => s.dataset.month);
   listEl.innerHTML = '<div class="hint" style="padding:6px 4px;">⏳ 불러오는 중...</div>';
   try { _entriesCache = await DiaryStore.loadEntries(); }
   catch (e) { listEl.innerHTML = `<div class="hint" style="padding:6px 4px; color:var(--red)">❌ ${_esc(e.message || e)}</div>`; return; }
@@ -398,11 +417,17 @@ async function renderMonthList() {
     showMonth(m);
   }));
   listEl.querySelectorAll('.date-item').forEach(btn => btn.addEventListener('click', () => showDate(btn.dataset.date)));
-  // 월 뷰가 열려 있으면 갱신
+  // 펼쳐 두었던 달 복원
+  prevOpen.forEach(m => {
+    const sub = listEl.querySelector(`.date-sub[data-month="${m}"]`);
+    if (sub) sub.classList.add('open');
+    const caret = listEl.querySelector(`.month-row[data-month="${m}"] .month-caret`);
+    if (caret) caret.textContent = '▾';
+  });
+  // 월 뷰가 열려 있으면 같은 달을 다시 그려 새 데이터 반영(새 DOM에는 active가 없으므로 보존값 사용)
   const mv = document.getElementById('view-month');
-  if (mv && !mv.classList.contains('hidden') && !document.getElementById('diary-search').value.trim()) {
-    const active = document.querySelector('.month-row.active');
-    if (active) showMonth(active.dataset.month);
+  if (mv && !mv.classList.contains('hidden') && prevMonth && !document.getElementById('diary-search').value.trim()) {
+    if (listEl.querySelector(`.month-row[data-month="${prevMonth}"]`)) showMonth(prevMonth);
   }
 }
 
@@ -484,8 +509,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('person-photo-pick').addEventListener('click', async () => {
     const prog = document.getElementById('person-add-progress');
+    // 포토 창을 닫으면 폴링 타임아웃까지 잠기므로 취소 버튼 제공(일기 생성 흐름과 동일)
+    const cancelRef = { cancelled: false };
+    const setProg = (msg) => {
+      if (!prog) return;
+      prog.innerHTML = `<span>${_esc(msg)}</span> <button type="button" class="btn btn-ghost pp-cancel" style="padding:2px 10px; font-size:11px;">선택 취소</button>`;
+      const cb = prog.querySelector('.pp-cancel');
+      if (cb) cb.addEventListener('click', () => { cancelRef.cancelled = true; cb.disabled = true; cb.textContent = '취소 중...'; });
+    };
     try {
-      const picked = await PhotosPicker.pick(msg => { if (prog) prog.textContent = msg; });
+      const picked = await PhotosPicker.pick(setProg, cancelRef);
       if (prog) prog.textContent = '';
       if (!picked || !picked.length) { showToast('선택된 사진이 없습니다.', 'error'); return; }
       if (prog) prog.textContent = '사진 불러오는 중...';
@@ -561,7 +594,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('download-btn').addEventListener('click', () => {
     const t = document.getElementById('diary-text').value;
-    const date = document.getElementById('diary-date').value || 'diary';
+    // 파일명은 '생성된 일기'의 날짜 기준 — 날짜 입력을 바꿔둔 뒤 받아도 어긋나지 않게
+    const last = DiaryAgent.getLast();
+    const date = (last && last.dateStr) || document.getElementById('diary-date').value || 'diary';
     const blob = new Blob([t], { type: 'text/plain;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -616,6 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.closest('.hist-del')) { e.stopPropagation(); await _deleteDiary(item, date); return; }
     if (item.classList.contains('editing')) return;     // 편집 중엔 토글 안 함
     if (e.target.closest('.hist-actions')) return;       // 액션 영역은 토글 안 함
+    if (window.getSelection && String(window.getSelection()).length) return; // 본문 드래그 선택(복사) 중엔 접지 않음
     _toggleEntry(item);
   });
 

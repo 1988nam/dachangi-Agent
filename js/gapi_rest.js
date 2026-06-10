@@ -6,13 +6,19 @@ const REST = (() => {
   const DRIVE = 'https://www.googleapis.com/drive/v3';
   const SHEETS = 'https://sheets.googleapis.com/v4';
 
-  async function _req(method, url, body) {
+  async function _req(method, url, body, _retried) {
     const token = (typeof Auth !== 'undefined' && Auth.getToken) ? Auth.getToken() : null;
     if (!token) throw new Error('로그인이 필요합니다(액세스 토큰 없음).');
     const opt = { method, headers: { Authorization: `Bearer ${token}` } };
     if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
     const res = await fetch(url, opt);
     if (!res.ok) {
+      // 토큰 만료(401): 한 번만 조용히 갱신 후 재시도
+      if (res.status === 401 && !_retried && Auth.refreshToken) {
+        try { await Auth.refreshToken(); }
+        catch (_) { throw new Error('로그인이 만료되었습니다 — 로그아웃 후 다시 로그인해 주세요.'); }
+        return _req(method, url, body, true);
+      }
       let t = ''; try { t = await res.text(); } catch (_) {}
       throw new Error(`Google API 오류 (${res.status}) ${t.replace(/\s+/g, ' ').slice(0, 200)}`);
     }
@@ -35,7 +41,7 @@ const REST = (() => {
     extractId,
     // Drive
     driveList: (params) => _req('GET', `${DRIVE}/files?${new URLSearchParams(params).toString()}`),
-    driveGet: (id, fields) => _req('GET', `${DRIVE}/files/${id}?fields=${encodeURIComponent(fields || 'id,name,mimeType')}`),
+    driveGet: (id, fields) => _req('GET', `${DRIVE}/files/${id}?supportsAllDrives=true&fields=${encodeURIComponent(fields || 'id,name,mimeType')}`),
     driveExportText: (fileId) => _req('GET', `${DRIVE}/files/${fileId}/export?mimeType=${encodeURIComponent('text/plain')}`),
     // Sheets
     sheetGet: (id, fields) => _req('GET', `${SHEETS}/spreadsheets/${id}${fields ? `?fields=${encodeURIComponent(fields)}` : ''}`),

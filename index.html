@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=31" />
+  <link rel="stylesheet" href="style.css?v=32" />
 </head>
 <body>
 
@@ -179,7 +179,7 @@
           <select id="cfg-gemini-model" style="flex:1;">
             <option value="gemini-2.5-flash">gemini-2.5-flash</option>
             <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
           </select>
           <button type="button" id="cfg-load-models" class="btn btn-ghost" style="white-space:nowrap; padding:9px 12px;">🔄 모델 불러오기</button>
         </div>
@@ -257,6 +257,8 @@
         for (const k in parsed) if (parsed[k] !== undefined && parsed[k] !== null) DACHANGI_CONFIG[k] = parsed[k];
       }
     } catch (e) { console.error('config 로드 에러:', e); }
+    // gemini-1.5 계열은 2025-09 서비스 종료(모든 호출 404) → 저장돼 있으면 현행 모델로 자동 마이그레이션
+    if (/^gemini-1\.5-/.test(DACHANGI_CONFIG.GEMINI_MODEL || '')) DACHANGI_CONFIG.GEMINI_MODEL = 'gemini-2.5-flash';
     // Gemini OAuth 사용 시 로그인 권한(SCOPES)에 generative-language 추가(키 없이 호출 가능)
     if (DACHANGI_CONFIG.GEMINI_USE_OAUTH) {
       const need = ['https://www.googleapis.com/auth/generative-language.retriever', 'https://www.googleapis.com/auth/cloud-platform'];
@@ -266,17 +268,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=31"></script>
-  <script src="js/gapi_rest.js?v=31"></script>
-  <script src="js/drive.js?v=31"></script>
-  <script src="js/photos_picker.js?v=31"></script>
-  <script src="js/gemini.js?v=31"></script>
-  <script src="js/diary_store.js?v=31"></script>
-  <script src="js/people_store.js?v=31"></script>
-  <script src="js/migrate.js?v=31"></script>
-  <script src="js/diary.js?v=31"></script>
-  <script src="js/config_modal.js?v=31"></script>
-  <script src="js/main.js?v=31"></script>
+  <script src="js/auth.js?v=32"></script>
+  <script src="js/gapi_rest.js?v=32"></script>
+  <script src="js/drive.js?v=32"></script>
+  <script src="js/photos_picker.js?v=32"></script>
+  <script src="js/gemini.js?v=32"></script>
+  <script src="js/diary_store.js?v=32"></script>
+  <script src="js/people_store.js?v=32"></script>
+  <script src="js/migrate.js?v=32"></script>
+  <script src="js/diary.js?v=32"></script>
+  <script src="js/config_modal.js?v=32"></script>
+  <script src="js/main.js?v=32"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
