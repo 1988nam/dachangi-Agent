@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=30" />
+  <link rel="stylesheet" href="style.css?v=31" />
 </head>
 <body>
 
@@ -71,6 +71,35 @@
               </div>
               <button id="generate-btn" class="btn">✍️ 일기 생성</button>
             </div>
+            <div class="row" style="margin-top:10px;">
+              <div class="field">
+                <label>문체 (글 분위기)</label>
+                <select id="style-select">
+                  <option value="">기본 (따뜻·담백)</option>
+                  <option value="mine">📖 내 일기 문체 따라쓰기</option>
+                  <option value="emotional">감성 에세이</option>
+                  <option value="humor">유쾌·재치</option>
+                  <option value="concise">간결한 기록</option>
+                  <option value="poetic">시적·서정</option>
+                  <option value="kid">어린이 그림일기</option>
+                  <option value="custom">직접 입력...</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>어투 (말끝)</label>
+                <select id="tone-select">
+                  <option value="">기본 (~했다)</option>
+                  <option value="banmal">친근한 반말 (~했어)</option>
+                  <option value="polite">부드러운 존댓말 (~했어요)</option>
+                  <option value="formal">정중한 격식체 (~했습니다)</option>
+                </select>
+              </div>
+              <div class="field" id="style-custom-field" style="display:none; flex:1; min-width:220px;">
+                <label>나만의 문체 설명</label>
+                <input type="text" id="style-custom" placeholder="예: 무라카미 하루키처럼 담담하고 건조하게" />
+              </div>
+            </div>
+            <div class="hint" style="margin-top:6px;">문체·어투를 바꾸고 <b>🔄 다시 생성</b>을 누르면, 사진을 다시 고르지 않고 같은 사진으로 새 문체의 일기를 써줍니다. <b>📖 내 일기 문체</b>는 저장된 최근 일기의 말투를 따라 씁니다.</div>
             <div class="hint" id="folder-hint" style="margin-top:10px;"></div>
             <div id="progress"></div>
           </div>
@@ -237,17 +266,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=30"></script>
-  <script src="js/gapi_rest.js?v=30"></script>
-  <script src="js/drive.js?v=30"></script>
-  <script src="js/photos_picker.js?v=30"></script>
-  <script src="js/gemini.js?v=30"></script>
-  <script src="js/diary_store.js?v=30"></script>
-  <script src="js/people_store.js?v=30"></script>
-  <script src="js/migrate.js?v=30"></script>
-  <script src="js/diary.js?v=30"></script>
-  <script src="js/config_modal.js?v=30"></script>
-  <script src="js/main.js?v=30"></script>
+  <script src="js/auth.js?v=31"></script>
+  <script src="js/gapi_rest.js?v=31"></script>
+  <script src="js/drive.js?v=31"></script>
+  <script src="js/photos_picker.js?v=31"></script>
+  <script src="js/gemini.js?v=31"></script>
+  <script src="js/diary_store.js?v=31"></script>
+  <script src="js/people_store.js?v=31"></script>
+  <script src="js/migrate.js?v=31"></script>
+  <script src="js/diary.js?v=31"></script>
+  <script src="js/config_modal.js?v=31"></script>
+  <script src="js/main.js?v=31"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

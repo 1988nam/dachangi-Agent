@@ -411,11 +411,37 @@ function onLogoutDone() {
   document.getElementById('login-screen').classList.remove('hidden');
 }
 
+// ── 문체/어투 선택 ─────────────────────────────────────────
+const STYLE_LS = 'dachangi_style_pref';
+function _styleFromUI() {
+  const v = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+  return { styleKey: v('style-select'), toneKey: v('tone-select'), customText: v('style-custom').trim() };
+}
+function _syncCustomStyleField() {
+  const sel = document.getElementById('style-select');
+  const field = document.getElementById('style-custom-field');
+  if (sel && field) field.style.display = sel.value === 'custom' ? '' : 'none';
+}
+function _saveStylePref() {
+  try { localStorage.setItem(STYLE_LS, JSON.stringify(_styleFromUI())); } catch (_) {}
+}
+function _restoreStylePref() {
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem(STYLE_LS) || 'null'); } catch (_) {}
+  if (!p) return;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
+  set('style-select', p.styleKey || '');
+  set('tone-select', p.toneKey || '');
+  set('style-custom', p.customText || '');
+  _syncCustomStyleField();
+}
+
 function _runFromUI() {
-  Auth && DiaryAgent.run({
+  DiaryAgent.run({
     dateStr: document.getElementById('diary-date').value,
     candCount: parseInt(document.getElementById('cand-count').value, 10) || 10,
     topCount: parseInt(document.getElementById('top-count').value, 10) || 3,
+    style: _styleFromUI(),
   });
 }
 
@@ -503,9 +529,29 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('cfg-export-btn').addEventListener('click', () => ConfigModal.exportConfig());
   document.getElementById('cfg-import-btn').addEventListener('click', () => ConfigModal.importConfig());
 
+  // 문체/어투: 마지막 선택 복원 + 변경 시 저장
+  _restoreStylePref();
+  ['style-select', 'tone-select'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => { _syncCustomStyleField(); _saveStylePref(); });
+  });
+  const customStyleEl = document.getElementById('style-custom');
+  if (customStyleEl) customStyleEl.addEventListener('input', _saveStylePref);
+
   // 생성
   document.getElementById('generate-btn').addEventListener('click', _runFromUI);
-  document.getElementById('regenerate-btn').addEventListener('click', _runFromUI);
+  // 다시 생성: 같은 날짜의 직전 결과가 있으면 사진 재선택 없이 본문만 재생성(문체 변경 반영).
+  //  날짜 입력이 직전 생성과 다르면 — 안내문과 달리 전체 파이프라인(자동 저장 = 그 날짜 기존 일기
+  //  덮어쓰기)이 돌게 되므로 confirm으로 의도를 확인한다.
+  document.getElementById('regenerate-btn').addEventListener('click', () => {
+    const last = DiaryAgent.getLast();
+    const curDate = document.getElementById('diary-date').value;
+    if (last && last.dateStr === curDate) { DiaryAgent.regenerateText(_styleFromUI()); return; }
+    if (last && curDate && last.dateStr !== curDate) {
+      if (!confirm(`날짜(${curDate})가 직전 생성(${last.dateStr})과 다릅니다.\n${curDate} 사진으로 처음부터 새로 생성할까요?\n(${curDate}에 저장된 일기가 있으면 새 일기로 덮어써집니다)`)) return;
+    }
+    _runFromUI();
+  });
 
   // 결과 액션
   document.getElementById('copy-btn').addEventListener('click', async () => {

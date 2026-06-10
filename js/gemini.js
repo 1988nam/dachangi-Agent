@@ -123,13 +123,45 @@ const GeminiAPI = (() => {
     }
   }
 
+  // 문체 프리셋 — index.html #style-select 의 value와 1:1 대응
+  const STYLE_GUIDES = {
+    mine: '아래 [문체 참고]에 첨부된, 사용자가 직접 쓴 일기들의 말투·문장 호흡·어휘 선택을 최대한 닮게 써.',
+    emotional: '감성 에세이 — 하루의 장면과 감정을 섬세하고 서정적으로 풀어내되, 과하지 않게 잔잔한 여운을 남겨.',
+    humor: '유쾌하고 재치 있는 글 — 가볍게 웃음이 나는 표현과 위트를 섞되, 비꼬지 않고 다정하게.',
+    concise: '간결한 기록체 — 군더더기 없이 짧은 문장으로 사실과 느낌만 담백하게. 3~5문장이면 충분해.',
+    poetic: '시적이고 서정적인 글 — 비유와 이미지 중심으로, 산문시처럼 리듬감 있게.',
+    kid: '어린이 그림일기 — 쉬운 단어와 순수한 시선으로, 솔직하고 천진하게.',
+  };
+  // 어투(말끝) 프리셋 — index.html #tone-select 의 value와 1:1 대응
+  const TONE_GUIDES = {
+    banmal: "친근한 반말 구어체로, 문장을 '~했어', '~더라', '~지 뭐야'처럼 친구에게 말하듯 끝맺어.",
+    polite: "부드러운 존댓말로, 문장을 '~했어요', '~네요'처럼 끝맺어.",
+    formal: "정중한 격식체로, 문장을 '~했습니다', '~입니다'로 끝맺어.",
+  };
+
   // Top 사진들로 일기 생성. people: [{name, relation, mime, data}] (선택) — 사진 속 인물 인지용 참조.
-  async function generateDiary(images, dateStr, promptTemplate, people) {
+  //  style: { styleKey, toneKey, customText, samples:[본문...] } (선택) — 문체/어투 지시.
+  async function generateDiary(images, dateStr, promptTemplate, people, style) {
     let finalPrompt = (promptTemplate || '').replace(/\{\{DATE\}\}/g, dateStr);
     finalPrompt += `\n\n위 가이드라인을 바탕으로, 첨부된 ${images.length}장의 사진을 종합하여 하나의 매끄러운 일기를 작성해 줘.`
       + '\n[중요] 글이 중간에 끊기지 않도록 반드시 문장을 끝까지 완성하고, 기승전결이 있게 자연스럽게 마무리해.';
 
+    const st = style || {};
+    const styleLines = [];
+    const sg = st.styleKey === 'custom' ? (st.customText || '').trim() : STYLE_GUIDES[st.styleKey];
+    if (sg) styleLines.push(`- 문체: ${sg}`);
+    const tg = TONE_GUIDES[st.toneKey];
+    if (tg) styleLines.push(`- 어투: ${tg}`);
+    if (styleLines.length) {
+      finalPrompt += '\n\n[문체·어투 지시 — 위 가이드의 문체 관련 내용과 충돌하면 이 지시를 우선해]\n' + styleLines.join('\n');
+    }
+
     const parts = [{ text: finalPrompt }];
+    const samples = (st.styleKey === 'mine' && Array.isArray(st.samples)) ? st.samples.filter(Boolean) : [];
+    if (samples.length) {
+      parts.push({ text: '\n[문체 참고 — 사용자가 직접 쓴 최근 일기. 말투·호흡·어휘만 닮게 쓰고, 내용·소재는 절대 가져오지 마.]\n'
+        + samples.map((s, i) => `〈예시 ${i + 1}〉\n${s}`).join('\n\n') });
+    }
     const refs = (people || []).filter(p => p && p.data && p.name);
     if (refs.length) {
       parts.push({ text: '\n\n[등장 인물 참고] 아래는 자주 등장하는 인물들의 얼굴 사진과 이름이야. '

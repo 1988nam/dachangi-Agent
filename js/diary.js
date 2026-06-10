@@ -53,6 +53,25 @@ const DiaryAgent = (() => {
     return out;
   }
 
+  // 문체 옵션 해석 — 'mine'(내 일기 문체)은 시트에 저장된 최근 일기 본문을 예시로 로드.
+  //  예시가 없으면 기본 문체로 폴백(빈 styleKey).
+  async function _resolveStyle(style, dateStr) {
+    const st = Object.assign({}, style || {});
+    if (st.styleKey !== 'mine') return st;
+    try {
+      const entries = await DiaryStore.loadEntries(); // 최신순
+      st.samples = entries
+        .filter(e => e.date !== dateStr && (e.text || '').trim().length >= 50)
+        .slice(0, 3)
+        .map(e => e.text.slice(0, 1200));
+    } catch (e) { console.warn('[Diary] 문체 예시 로드 실패:', e); st.samples = []; }
+    if (!st.samples.length) {
+      st.styleKey = '';
+      showToast('참고할 저장된 일기가 없어 기본 문체로 작성합니다.');
+    }
+    return st;
+  }
+
   // 구글 포토 Picker로 직접 선택 → base64 [{mime,data,name,id:''}]
   //  포토 baseUrl은 만료되어 재참조 불가 → 히스토리 썸네일용 영구 id는 비움.
   async function _gatherFromPhotos(cfg, candCount) {
@@ -117,15 +136,16 @@ const DiaryAgent = (() => {
       let people = [];
       try { if (typeof PeopleStore !== 'undefined') people = await PeopleStore.loadForPrompt(); } catch (_) {}
 
+      const style = await _resolveStyle(opts.style, dateStr);
       s = _step(`✍️ Gemini로 일기 작성 중...${people.length ? ` (인물 ${people.length}명 참조)` : ''}`, true);
-      const diary = await GeminiAPI.generateDiary(topImages, dateStr, cfg.DIARY_PROMPT || '', people);
+      const diary = await GeminiAPI.generateDiary(topImages, dateStr, cfg.DIARY_PROMPT || '', people, style);
       if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); return; }
       _done(s, '일기 작성 완료');
 
       // 사용자가 대표 사진을 직접 고를 수 있도록 후보 전체를 보관(기본 대표 = Gemini 1순위)
       const allImages = candImages;
       const repDefaultIdx = Math.max(0, allImages.indexOf(topImages[0]));
-      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, _uploadCache: {}, bestId: '', bestThumb: '' };
+      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, _uploadCache: {}, bestId: '', bestThumb: '', style };
 
       // 기본 대표 사진을 영구·고화질로 보관(포토=드라이브 업로드, 실패 시 시트 썸네일 폴백)
       let bestThumb = '';
@@ -293,6 +313,38 @@ const DiaryAgent = (() => {
   function getLast() { return _last; }
   function setBestIndex(i) { if (_last) _last.bestIndex = i; }
 
+  // 같은 사진(직전 생성의 대표 후보)으로 본문만 다시 생성 — 문체·어투 변경을 빠르게 비교.
+  //  자동 저장하지 않음: 마음에 들면 💾 버튼으로 등록.
+  async function regenerateText(styleOpts) {
+    if (_busy) return;
+    if (!_last) { showToast('먼저 일기를 생성하세요.', 'error'); return; }
+    const cfg = window.DACHANGI_CONFIG || {};
+    _busy = true;
+    _clearProgress();
+    const genBtn = document.getElementById('generate-btn');
+    if (genBtn) genBtn.disabled = true;
+    try {
+      const style = await _resolveStyle(styleOpts, _last.dateStr);
+      let people = [];
+      try { if (typeof PeopleStore !== 'undefined') people = await PeopleStore.loadForPrompt(); } catch (_) {}
+      const s = _step('✍️ 같은 사진으로 일기 다시 쓰는 중...', true);
+      const diary = await GeminiAPI.generateDiary(_last.topImages, _last.dateStr, cfg.DIARY_PROMPT || '', people, style);
+      if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); return; }
+      _done(s, '다시 작성 완료 — 마음에 들면 💾 버튼으로 등록');
+      _last.diary = diary;
+      _last.style = style;
+      document.getElementById('diary-text').value = diary.trim();
+      document.getElementById('result-card').style.display = 'block';
+      showToast('✅ 새 문체로 다시 썼어요. 등록하려면 💾를 누르세요.');
+    } catch (e) {
+      console.error('[Diary] 재생성 실패:', e);
+      showToast('❌ 재생성 실패: ' + (e.message || e), 'error');
+    } finally {
+      _busy = false;
+      const b = document.getElementById('generate-btn'); if (b) b.disabled = false;
+    }
+  }
+
   // 결과 카드의 수정 텍스트 + 선택한 대표 사진으로 최종 등록(같은 날짜 덮어쓰기)
   async function finalize(text) {
     if (!_last) throw new Error('생성된 일기가 없습니다.');
@@ -330,5 +382,5 @@ const DiaryAgent = (() => {
     return { ok: true };
   }
 
-  return { run, getLast, setBestIndex, finalize };
+  return { run, getLast, setBestIndex, finalize, regenerateText };
 })();
