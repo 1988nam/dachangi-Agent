@@ -292,7 +292,7 @@ function _enterEditMode(item, date) {
           <label style="font-size:12px; color:var(--text-muted);">문체</label>
           <select class="hist-style">
             <option value="">문체 유지</option>
-            <option value="junghyun">✍️ 정현체 (내 문체)</option>
+            <option value="junghyun">✍️ 정현체 (직접 쓴 일기 학습)</option>
             <option value="mine">📖 내 일기 문체 따라쓰기</option>
             <option value="emotional">감성 에세이</option>
             <option value="humor">유쾌·재치</option>
@@ -420,13 +420,19 @@ async function _rewriteInEdit(item) {
   const keywords = ((item.querySelector('.hist-keywords') || {}).value || '').trim();
   if (!styleKey && !toneKey && !keywords) { showToast('바꿀 문체/어투를 고르거나 키워드를 입력하세요.', 'error'); return; }
   if (!area.value.trim()) { showToast('다시 쓸 내용이 없습니다.', 'error'); return; }
-  // 📖 내 일기 문체: 저장된 다른 일기들을 예시로 (단건 생성의 _resolveStyle과 동일 규칙)
+  // 문체 예시 로드(단건 생성의 _resolveStyle과 동일 규칙):
+  //  · 📖 내 일기 문체(mine): 저장된 다른 일기 전반.
+  //  · ✍️ 정현체(junghyun): 직접 쓴 수동 일기를 학습(없으면 gemini 내장 예시로 폴백).
   let samples = [];
   if (styleKey === 'mine') {
     samples = _entriesCache
       .filter(en => en.date !== item.dataset.date && (en.text || '').trim().length >= 50)
       .slice(0, 3).map(en => en.text.slice(0, 1200));
     if (!samples.length) { showToast('참고할 다른 일기가 없어 내 문체를 적용할 수 없습니다.', 'error'); return; }
+  } else if (styleKey === 'junghyun') {
+    samples = _entriesCache
+      .filter(en => en.type === 'manual' && en.date !== item.dataset.date && (en.text || '').trim().length >= 30)
+      .slice(0, 3).map(en => en.text.slice(0, 1200));
   }
   const btn = item.querySelector('.hist-rewrite'); const o = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '✍️ 다시 쓰는 중...'; }
@@ -961,6 +967,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try { exportDiariesJson(); } catch (_) {}
     _rsCancel = false; _rsBtn.dataset.busy = '1';
     const o = _rsBtn.textContent; _rsBtn.textContent = '🖋️ 변환 중… (다시 누르면 중단)';
+    // 정현체면 직접 쓴 수동 일기를 학습 예시 풀로(각 변환 시 자기 자신은 제외). 없으면 gemini 내장 예시로 폴백.
+    const manualPool = styleKey === 'junghyun'
+      ? _entriesCache.filter(en => en.type === 'manual' && (en.text || '').trim().length >= 30)
+      : [];
     let done = 0, failed = 0; const failedDates = [];
     const oldestFirst = entries.slice().reverse(); // 과거 → 최신 순(중단해도 앞쪽부터 정리됨)
     for (let i = 0; i < oldestFirst.length; i++) {
@@ -968,7 +978,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const en = oldestFirst[i];
       if (prog) prog.textContent = `(${i + 1}/${oldestFirst.length}) ${en.date} 다시 쓰는 중...`;
       try {
-        const out = await GeminiAPI.rewriteDiary(en.text, { styleKey, toneKey });
+        const samples = manualPool.filter(m => m.date !== en.date).slice(0, 3).map(m => m.text.slice(0, 1200));
+        const out = await GeminiAPI.rewriteDiary(en.text, { styleKey, toneKey, samples });
         if (!out || !out.trim()) throw new Error('빈 응답');
         await DiaryStore.updateText(en.date, out.trim());
         en.text = out.trim(); // 캐시 동기화(목록 미리보기 갱신용)

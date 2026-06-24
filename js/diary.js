@@ -53,19 +53,28 @@ const DiaryAgent = (() => {
     return out;
   }
 
-  // 문체 옵션 해석 — 'mine'(내 일기 문체)은 시트에 저장된 최근 일기 본문을 예시로 로드.
-  //  예시가 없으면 기본 문체로 폴백(빈 styleKey).
+  // 문체 옵션 해석 — 시트에 저장된 일기를 예시(few-shot)로 로드해 문체·어투를 학습시킨다.
+  //  · 'junghyun'(정현체): 사용자가 '직접 쓴' 수동 일기를 우선 학습 → 본인 문체·어투에 가장 근접.
+  //                        수동 일기가 없으면 빈 배열로 두고 gemini의 내장 정현체 예시로 폴백.
+  //  · 'mine'(내 일기 문체): 작성 방식 무관, 저장된 최근 일기 전반의 말투. 예시 없으면 기본 문체로 폴백.
   async function _resolveStyle(style, dateStr) {
     const st = Object.assign({}, style || {});
-    if (st.styleKey !== 'mine') return st;
+    if (st.styleKey !== 'mine' && st.styleKey !== 'junghyun') return st;
     try {
       const entries = await DiaryStore.loadEntries(); // 최신순
-      st.samples = entries
-        .filter(e => e.date !== dateStr && (e.text || '').trim().length >= 50)
-        .slice(0, 3)
-        .map(e => e.text.slice(0, 1200));
+      if (st.styleKey === 'junghyun') {
+        st.samples = entries
+          .filter(e => e.type === 'manual' && e.date !== dateStr && (e.text || '').trim().length >= 30)
+          .slice(0, 3)
+          .map(e => e.text.slice(0, 1200));
+      } else {
+        st.samples = entries
+          .filter(e => e.date !== dateStr && (e.text || '').trim().length >= 50)
+          .slice(0, 3)
+          .map(e => e.text.slice(0, 1200));
+      }
     } catch (e) { console.warn('[Diary] 문체 예시 로드 실패:', e); st.samples = []; }
-    if (!st.samples.length) {
+    if (st.styleKey === 'mine' && !st.samples.length) {
       st.styleKey = '';
       showToast('참고할 저장된 일기가 없어 기본 문체로 작성합니다.');
     }
@@ -221,7 +230,8 @@ const DiaryAgent = (() => {
 
       const style = await _resolveStyle(opts.style, dateStr);
       const keywords = (opts.keywords || '').trim();
-      s = _step(`✍️ Gemini로 일기 작성 중...${people.length ? ` (인물 ${people.length}명 참조)` : ''}${keywords ? ' · 키워드 반영' : ''}`, true);
+      const learnNote = (style.styleKey === 'junghyun' && style.samples && style.samples.length) ? ` · 직접 쓴 일기 ${style.samples.length}편 문체 학습` : '';
+      s = _step(`✍️ Gemini로 일기 작성 중...${people.length ? ` (인물 ${people.length}명 참조)` : ''}${keywords ? ' · 키워드 반영' : ''}${learnNote}`, true);
       const diary = await GeminiAPI.generateDiary(topImages, dateStr, cfg.DIARY_PROMPT || '', people, style, keywords);
       if (!diary || diary.trim().toUpperCase() === 'SKIP') { _logFail('작성', `${dateStr}: AI가 일기 작성을 SKIP`); _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); restoreCard(); return; }
       _done(s, '일기 작성 완료');

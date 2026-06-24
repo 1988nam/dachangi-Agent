@@ -184,6 +184,20 @@ const GeminiAPI = (() => {
     + '확실히 고창은 직계가족이 많으니 뭘 하든 북적북적 시끄러운 느낌이다.',
   ];
 
+  // 문체 예시(few-shot) 해석 — [문체 참고]로 첨부할 예시 본문 배열을 고른다.
+  //  · mine    : 호출 측이 넘긴 최근 일기(st.samples) 그대로.
+  //  · junghyun: 사용자가 '직접 쓴' 수동 일기(st.samples)를 우선 학습하고, 부족하면 내장 정현체
+  //              예시로 보충(최대 4편). 수동 일기가 없으면 기존처럼 내장 예시만 사용 → 폴백 안전.
+  function _styleSamples(st) {
+    if (!st) return [];
+    if (st.styleKey === 'mine' && Array.isArray(st.samples)) return st.samples.filter(Boolean);
+    if (st.styleKey === 'junghyun') {
+      const learned = Array.isArray(st.samples) ? st.samples.filter(Boolean) : [];
+      return learned.concat(JUNGHYUN_SAMPLES).slice(0, 4);
+    }
+    return [];
+  }
+
   // 어투(말끝) 프리셋 — index.html #tone-select / 수정모드 .hist-tone 의 value와 1:1 대응
   const TONE_GUIDES = {
     plain: "간결한 기록체로, 문장을 '~했다', '~였다', '~인 것 같다'처럼 담백하게 끝맺어.",
@@ -219,8 +233,7 @@ const GeminiAPI = (() => {
     }
 
     const parts = [{ text: finalPrompt }];
-    const samples = (st.styleKey === 'mine' && Array.isArray(st.samples)) ? st.samples.filter(Boolean)
-      : (st.styleKey === 'junghyun' ? JUNGHYUN_SAMPLES : []);
+    const samples = _styleSamples(st);
     if (samples.length) {
       parts.push({ text: '\n[문체 참고 — 사용자가 직접 쓴 최근 일기. 말투·호흡·어휘만 닮게 쓰고, 내용·소재는 절대 가져오지 마.]\n'
         + samples.map((s, i) => `〈예시 ${i + 1}〉\n${s}`).join('\n\n') });
@@ -263,8 +276,7 @@ const GeminiAPI = (() => {
     const tg = TONE_GUIDES[st.toneKey];
     if (tg) lines.push(`- 어투: ${tg}`);
     const kw = (keywords || '').trim();
-    const samples = st.styleKey === 'junghyun' ? JUNGHYUN_SAMPLES
-      : (st.styleKey === 'mine' && Array.isArray(st.samples) ? st.samples.filter(Boolean) : []);
+    const samples = _styleSamples(st);
     const prompt = '아래 [원본 일기]를 다시 써줘.\n'
       + '[규칙]\n'
       + '- 사실·사건·인물·시간 순서 등 내용은 그대로 유지하고, 문장 표현만 바꿔.\n'
