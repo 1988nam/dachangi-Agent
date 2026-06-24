@@ -133,6 +133,9 @@ const GeminiAPI = (() => {
       '- 단순 제품·포장지 클로즈업, 영수증/바코드/택배 라벨/가격표',
       '- 스크린샷 또는 모니터/화면 촬영, 배경 없는 실내 사물만, 의미 없는 벽/바닥',
       '',
+      '【중요】 선택 불가(skip)는 최후의 수단이야. 금지 항목이 아닌 사진이 한 장이라도 있으면',
+      '반드시 그중에서 골라 ranking을 채워. 모든 사진이 금지 항목에 해당할 때만 skip 해.',
+      '',
       `사진은 1번부터 ${images.length}번 순서로 첨부됩니다. 같은 번호를 두 번 쓰지 마.`,
       '반드시 아래 JSON 형식으로만 답하세요. 다른 말은 절대 하지 마세요.',
       `선택 가능: {"ranking": [${example}]}`,
@@ -155,6 +158,11 @@ const GeminiAPI = (() => {
 
   // 문체 프리셋 — index.html #style-select 의 value와 1:1 대응
   const STYLE_GUIDES = {
+    junghyun: '정현체 — 사용자가 평소 쓰는 일기 문체. 반말 기록체(~했다, ~인 것 같다, ~할 예정이다)로 '
+      + '사건을 시간 순서대로 담백하게 서술하고, 단락 끝에 짧은 감상 한 줄로 마무리해(예: "~해서 웃긴 것 같다", "다사다난했던 하루였다"). '
+      + '사람은 이름·호칭으로 구체적으로 부르고 필요하면 괄호로 짧게 부연해(예: 둘째처형 (회색옷)). 숫자·디테일은 구체적으로 적어. '
+      + '말줄임표(..)는 가끔 자연스럽게 써도 되지만, "ㅋㅋ"나 "ㅎㅎ" 같은 웃음 표현은 절대 쓰지 마. '
+      + '화려한 미사여구 없이 수수하고 솔직하게, 아래 [문체 참고]의 말투·호흡을 최대한 닮게 써.',
     mine: '아래 [문체 참고]에 첨부된, 사용자가 직접 쓴 일기들의 말투·문장 호흡·어휘 선택을 최대한 닮게 써.',
     emotional: '감성 에세이 — 하루의 장면과 감정을 섬세하고 서정적으로 풀어내되, 과하지 않게 잔잔한 여운을 남겨.',
     humor: '유쾌하고 재치 있는 글 — 가볍게 웃음이 나는 표현과 위트를 섞되, 비꼬지 않고 다정하게.',
@@ -162,19 +170,43 @@ const GeminiAPI = (() => {
     poetic: '시적이고 서정적인 글 — 비유와 이미지 중심으로, 산문시처럼 리듬감 있게.',
     kid: '어린이 그림일기 — 쉬운 단어와 순수한 시선으로, 솔직하고 천진하게.',
   };
-  // 어투(말끝) 프리셋 — index.html #tone-select 의 value와 1:1 대응
+  // 정현체 few-shot 예시 — 사용자가 직접 쓴 일기에서 발췌. junghyun 문체 선택 시 [문체 참고]로 첨부.
+  const JUNGHYUN_SAMPLES = [
+    '셋째 처형네가 서울에 와서 같이 어딜갈까 고민하다가, 파주 DMZ를 가게 되었다.\n'
+    + '예전에 혜영이랑도 갔었는데 그 때 못 탄 케이블카를 타고 넓게 펼쳐진 겨울 풍경을 감상했다.\n'
+    + '화려한 빛으로 가득한 미디어아트 전시관에서 조카들과 처형, 혜영이랑 함께 즐거운 순간을 사진으로 남겼다.\n'
+    + '혜영이가 무슨 소라게처럼 사진이 나와서 웃긴 것 같다.',
+    '어제도 정말 10년만에 만난 송욱이형과 (상무형 친구) 둘이 배스 낚시를 했는데,\n'
+    + '새벽 일찍 나가서 낚시하고 같이 구이바다에 라면 끓여 먹고, 송욱이형 간 뒤에도 나는 3마리 더 잡아서 10마리 채우고 집으로 귀가, 그리고서는 그냥 바로 뻗어버렸다.\n'
+    + '근데도 또 가고 싶어서 내일 엄마와 등산을 가지 않는다면 새벽에 또 포천쪽으로 가서 낚시를 할까 계속 고민중 이다.',
+    '이번에는 명절이 짧고, 설 당일 이후 쉬는날이 하루뿐이라 장인,장모님이나 형님들 처형들과는 많은 시간은 보내지 못하고 왔다. (다음날 출근을 해야해서)\n'
+    + '그래도 지난번과 같이 조카들의 용돈 게임을 위해 개구리 멀리뛰기 게임과 꿀벌 자석게임을 준비해갔고, 어머니와 큰 처형까지 재미있게 게임 하는 모습의 사진이다.\n'
+    + '확실히 고창은 직계가족이 많으니 뭘 하든 북적북적 시끄러운 느낌이다.',
+  ];
+
+  // 어투(말끝) 프리셋 — index.html #tone-select / 수정모드 .hist-tone 의 value와 1:1 대응
   const TONE_GUIDES = {
+    plain: "간결한 기록체로, 문장을 '~했다', '~였다', '~인 것 같다'처럼 담백하게 끝맺어.",
     banmal: "친근한 반말 구어체로, 문장을 '~했어', '~더라', '~지 뭐야'처럼 친구에게 말하듯 끝맺어.",
     polite: "부드러운 존댓말로, 문장을 '~했어요', '~네요'처럼 끝맺어.",
     formal: "정중한 격식체로, 문장을 '~했습니다', '~입니다'로 끝맺어.",
   };
 
-  // Top 사진들로 일기 생성. people: [{name, relation, mime, data}] (선택) — 사진 속 인물 인지용 참조.
+  // Top 사진들로 일기 생성. people: [{name, relation, callAs?, mime, data}] (선택) — 사진 속 인물 인지용 참조.
   //  style: { styleKey, toneKey, customText, samples:[본문...] } (선택) — 문체/어투 지시.
-  async function generateDiary(images, dateStr, promptTemplate, people, style) {
+  //  keywords: 사용자가 입력한 그날의 맥락 키워드(선택) — 사진 해석보다 우선하는 사실로 취급.
+  async function generateDiary(images, dateStr, promptTemplate, people, style, keywords) {
     let finalPrompt = (promptTemplate || '').replace(/\{\{DATE\}\}/g, dateStr);
     finalPrompt += `\n\n위 가이드라인을 바탕으로, 첨부된 ${images.length}장의 사진을 종합하여 하나의 매끄러운 일기를 작성해 줘.`
       + '\n[중요] 글이 중간에 끊기지 않도록 반드시 문장을 끝까지 완성하고, 기승전결이 있게 자연스럽게 마무리해.';
+
+    const kw = (keywords || '').trim();
+    if (kw) {
+      finalPrompt += '\n\n[오늘의 맥락 키워드 — 사용자가 직접 알려준 사실이므로, 사진에서 받은 인상과 다르면 이 키워드를 우선해]'
+        + `\n${kw}`
+        + '\n이 키워드를 그날의 사실(누구와·어디서·무슨 일)의 뼈대로 삼고, 사진은 그 장면을 보여주는 근거로 해석해서 자연스럽게 엮어. '
+        + '예를 들어 키워드가 "회사 워크샵"이면 사진 속 모임을 친구 모임으로 단정하지 마. 키워드에 없는 사실을 새로 지어내지는 마.';
+    }
 
     const st = style || {};
     const styleLines = [];
@@ -187,18 +219,29 @@ const GeminiAPI = (() => {
     }
 
     const parts = [{ text: finalPrompt }];
-    const samples = (st.styleKey === 'mine' && Array.isArray(st.samples)) ? st.samples.filter(Boolean) : [];
+    const samples = (st.styleKey === 'mine' && Array.isArray(st.samples)) ? st.samples.filter(Boolean)
+      : (st.styleKey === 'junghyun' ? JUNGHYUN_SAMPLES : []);
     if (samples.length) {
       parts.push({ text: '\n[문체 참고 — 사용자가 직접 쓴 최근 일기. 말투·호흡·어휘만 닮게 쓰고, 내용·소재는 절대 가져오지 마.]\n'
         + samples.map((s, i) => `〈예시 ${i + 1}〉\n${s}`).join('\n\n') });
     }
     const refs = (people || []).filter(p => p && p.data && p.name);
     if (refs.length) {
-      parts.push({ text: '\n\n[등장 인물 참고] 아래는 자주 등장하는 인물들의 얼굴 사진과 이름이야. '
-        + '오늘의 일기 사진 속에 이 사람이 보이면 어색하지 않게 이름(또는 관계)으로 자연스럽게 불러줘. '
+      parts.push({ text: '\n\n[등장 인물 참고] 아래는 자주 등장하는 인물들의 얼굴 사진과 호칭이야. '
+        + '오늘의 일기 사진 속에 이 사람이 보이면 일기에서는 반드시 표기된 호칭 그대로 자연스럽게 불러줘(다른 이름·호칭을 지어내지 마). '
+        + '호칭 뒤 괄호 안은 누구인지 알려주는 참고 정보일 뿐이니 본문에 그대로 옮겨 쓰지 마. '
         + '얼굴이 확실하지 않으면 억지로 이름을 붙이지 말고 추측하지 마.' });
+      // 호칭은 people_store의 callAs가 결정(나·혜영·아가·친구는 이름, 다른 가족은 관계).
+      //  호칭이 관계(예: 장모님)면 실명은 프롬프트에서 숨겨 모델이 이름을 쓰는 사고를 막고,
+      //  같은 호칭이 여러 명(처형 등)이면 메모를 구분 단서로 병기해 인물이 합쳐지지 않게 한다.
+      const dupCount = {};
+      refs.forEach(p => { const c = p.callAs || p.name; dupCount[c] = (dupCount[c] || 0) + 1; });
       refs.forEach(p => {
-        parts.push({ text: `· 인물: ${p.name}${p.relation ? ` (${p.relation})` : ''}` });
+        const callAs = p.callAs || p.name;
+        const hints = [];
+        if (callAs === p.name && p.relation && p.relation !== p.name) hints.push(p.relation);
+        if (dupCount[callAs] > 1 && p.memo) hints.push(`구분: ${p.memo}`);
+        parts.push({ text: `· 호칭: ${callAs}${hints.length ? ` (${hints.join(', ')})` : ''}` });
         parts.push({ inline_data: { mime_type: p.mime || 'image/jpeg', data: p.data } });
       });
       parts.push({ text: '\n[오늘의 일기 사진] (아래 사진들로 일기를 작성)' });
@@ -207,6 +250,34 @@ const GeminiAPI = (() => {
 
     const text = await _call(parts, { temperature: 0.5, maxOutputTokens: 8192 });
     return text;
+  }
+
+  // 기존 일기 본문을 다른 문체/어투로 다시 쓰기(사진 없이 텍스트만).
+  //  style: { styleKey, toneKey, samples } — STYLE_GUIDES/TONE_GUIDES 키. 'mine'은 samples 필요.
+  //  keywords: 사용자가 알려준 실제 맥락 — 원본이 잘못 서술한 부분을 이 사실에 맞게 교정(단건 생성의 키워드와 동일 철학).
+  async function rewriteDiary(text, style, keywords) {
+    const st = style || {};
+    const lines = [];
+    const sg = STYLE_GUIDES[st.styleKey];
+    if (sg) lines.push(`- 문체: ${sg}`);
+    const tg = TONE_GUIDES[st.toneKey];
+    if (tg) lines.push(`- 어투: ${tg}`);
+    const kw = (keywords || '').trim();
+    const samples = st.styleKey === 'junghyun' ? JUNGHYUN_SAMPLES
+      : (st.styleKey === 'mine' && Array.isArray(st.samples) ? st.samples.filter(Boolean) : []);
+    const prompt = '아래 [원본 일기]를 다시 써줘.\n'
+      + '[규칙]\n'
+      + '- 사실·사건·인물·시간 순서 등 내용은 그대로 유지하고, 문장 표현만 바꿔.\n'
+      + (kw
+        ? '- 단, [맥락 키워드]는 사용자가 직접 알려준 실제 사실이다. 원본이 이와 다르게 서술한 부분은 이 사실에 맞게 자연스럽게 고쳐 써.\n'
+          + '- 키워드에 근거한 교정 외에는 새로운 사실을 추가하거나 있던 내용을 빼지 마. 분량은 원본과 비슷하게.\n'
+        : '- 새로운 사실을 추가하거나 있던 내용을 빼지 마. 분량은 원본과 비슷하게.\n')
+      + '- 다시 쓴 일기 본문만 출력해(제목·설명·따옴표 금지).\n'
+      + (lines.length ? '[문체·어투 지시]\n' + lines.join('\n') + '\n' : '')
+      + (kw ? '[맥락 키워드]\n' + kw + '\n' : '')
+      + (samples.length ? '[문체 참고 — 아래 예시의 말투·호흡만 닮게 쓰고, 내용은 절대 가져오지 마]\n' + samples.join('\n\n') + '\n' : '')
+      + '\n[원본 일기]\n' + (text || '');
+    return await _call([{ text: prompt }], { temperature: 0.5, maxOutputTokens: 8192 });
   }
 
   // 오늘 사진 속 인물을 기존 얼굴과 대조 + 신규 구분. knownFaces:[{name?, mime, data}] (인덱스 0..N-1)
@@ -238,5 +309,5 @@ const GeminiAPI = (() => {
     catch (_) { return { results: [] }; }
   }
 
-  return { rankPhotos, generateDiary, listAvailableModels, analyzeFaces };
+  return { rankPhotos, generateDiary, rewriteDiary, listAvailableModels, analyzeFaces };
 })();

@@ -2,10 +2,17 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E📔%3C/text%3E%3C/svg%3E" />
   <title>다챙이 📔 AI 일기</title>
-  <link rel="stylesheet" href="style.css?v=32" />
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="다챙이" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="style.css?v=48" />
 </head>
 <body>
 
@@ -55,6 +62,7 @@
       <main class="main">
         <!-- 새 일기 쓰기 뷰 -->
         <div id="view-write" class="view">
+          <div id="stats-bar" class="stats-bar" style="display:none;"></div>
           <div class="card">
             <div class="card-title">✍️ 일기 생성</div>
             <div class="row">
@@ -69,13 +77,21 @@
                   <input type="number" id="top-count" value="3" min="1" max="5" style="width:80px;" />
                 </div>
               </div>
-              <button id="generate-btn" class="btn">✍️ 일기 생성</button>
+              <button id="generate-btn" class="btn">🤖 AI 일기 생성</button>
+              <button id="manual-btn" class="btn btn-ghost" title="Gemini 없이, 사진만 고르고 일기는 직접 작성합니다">📝 직접 쓰기</button>
+            </div>
+            <div class="row" style="margin-top:10px;">
+              <div class="field" style="flex:1; min-width:260px;">
+                <label>키워드 (선택 — 그날의 맥락을 알려주면 AI가 사진을 더 정확히 해석해요)</label>
+                <input type="text" id="diary-keywords" placeholder="예: 회사 워크샵, 캠핑, 양평 (쉼표로 구분)" />
+              </div>
             </div>
             <div class="row" style="margin-top:10px;">
               <div class="field">
                 <label>문체 (글 분위기)</label>
                 <select id="style-select">
-                  <option value="">기본 (따뜻·담백)</option>
+                  <option value="junghyun" selected>✍️ 정현체 (기본 — 내 문체)</option>
+                  <option value="plain">따뜻·담백</option>
                   <option value="mine">📖 내 일기 문체 따라쓰기</option>
                   <option value="emotional">감성 에세이</option>
                   <option value="humor">유쾌·재치</option>
@@ -99,14 +115,30 @@
                 <input type="text" id="style-custom" placeholder="예: 무라카미 하루키처럼 담담하고 건조하게" />
               </div>
             </div>
-            <div class="hint" style="margin-top:6px;">문체·어투를 바꾸고 <b>🔄 다시 생성</b>을 누르면, 사진을 다시 고르지 않고 같은 사진으로 새 문체의 일기를 써줍니다. <b>📖 내 일기 문체</b>는 저장된 최근 일기의 말투를 따라 씁니다.</div>
+            <div class="hint" style="margin-top:6px;">문체·어투·키워드를 바꾸고 <b>🔄 다시 생성</b>을 누르면, 사진을 다시 고르지 않고 같은 사진으로 새 일기를 써줍니다. <b>📖 내 일기 문체</b>는 저장된 최근 일기의 말투를 따라 씁니다.</div>
             <div class="hint" id="folder-hint" style="margin-top:10px;"></div>
             <div id="progress"></div>
           </div>
 
+          <!-- 여러 날 일괄 생성 (밀린 일기) -->
+          <details class="card" id="batch-card">
+            <summary class="card-title" style="cursor:pointer; list-style:none;">📅 여러 날 한 번에 (밀린 일기) <span style="color:var(--text-muted); font-size:12px; font-weight:400;">— 펼치기</span></summary>
+            <div class="hint" style="margin-top:8px;">밀린 며칠치를 한 번에 만듭니다. <b>구글 포토</b>는 여러 날 사진을 한 번에 고르면 촬영일별로 묶어 각각 일기를 씁니다. <b>드라이브</b>는 아래 기간(시작~끝) 안의 날짜마다 씁니다. <b>이미 일기가 있는 날은 건너뜁니다.</b> 위의 문체·어투 설정이 함께 적용됩니다.</div>
+            <div class="row" id="batch-drive-range" style="margin-top:10px; display:none;">
+              <div class="field"><label>시작 날짜</label><input type="date" id="batch-start" /></div>
+              <div class="field"><label>끝 날짜</label><input type="date" id="batch-end" /></div>
+            </div>
+            <div class="field" style="margin-top:10px;">
+              <label>키워드 (선택 — 한 줄에 하나씩. 그냥 쓰면 모든 날짜 공통, 「날짜: 키워드」로 쓰면 그날에만 적용)</label>
+              <textarea id="batch-keywords" style="width:100%; min-height:64px;" placeholder="가족 여행 (모든 날짜 공통)&#10;2026-06-10: 회사 워크샵, 캠핑&#10;2026-06-11: 워크샵 둘째 날, 귀가"></textarea>
+            </div>
+            <button id="batch-btn" class="btn" style="margin-top:12px;">📅 여러 날 일기 만들기</button>
+            <div id="batch-progress" style="margin-top:10px;"></div>
+          </details>
+
           <div class="card" id="result-card">
-            <div class="card-title">📖 생성된 일기 <span id="result-date" class="diary-meta" style="margin-left:8px;"></span></div>
-            <div class="diary-meta">선정된 사진 — <b>대표로 쓸 사진을 클릭해 고르세요</b> (보라 테두리 = 대표). 일기 내용도 아래에서 수정할 수 있어요.</div>
+            <div class="card-title">📖 생성된 일기 <span id="manual-badge" class="manual-tag" style="display:none;">✍️ 수동 작성</span> <input type="date" id="result-date" style="margin-left:8px; width:160px; font-size:13px;" title="날짜를 바꾸고 💾 등록을 누르면 일기가 그 날짜로 이동합니다" /></div>
+            <div class="diary-meta" id="result-meta">선정된 사진 — <b>대표로 쓸 사진을 클릭해 고르세요</b> (보라 테두리 = 대표). 일기 내용도 아래에서 수정할 수 있어요.</div>
             <div class="photo-strip" id="photo-strip"></div>
             <textarea id="diary-text" placeholder="일기가 여기에 표시됩니다."></textarea>
             <div class="modal-actions" style="justify-content:flex-start; flex-wrap:wrap;">
@@ -202,8 +234,51 @@
         <button type="button" id="migrate-btn" class="btn btn-ghost" style="width:auto; padding:9px 14px;">📥 기존 일기 문서 → 일기 시트로 이관</button>
         <div class="hint" id="migrate-progress" style="margin-top:6px;"></div>
       </div>
+      <div class="field">
+        <label>폼 기록 시트 가져오기 <span style="color:var(--text-muted); font-size:11px;">(일자·주간 요약 열이 있는 응답 시트)</span></label>
+        <input type="text" id="form-import-url" placeholder="구글 시트 URL 붙여넣기 (gid 포함 시 해당 탭)" />
+        <button type="button" id="form-import-btn" class="btn btn-ghost" style="width:auto; padding:9px 14px; margin-top:6px;">📋 폼 기록 → 일기 시트로 가져오기</button>
+        <div class="hint" style="margin-top:4px;">주간 요약을 본문으로 가져오고, 운동/공부/주요 활동은 의미 있는 값일 때만 꼬리표로 붙입니다. 이미 일기가 있는 날짜는 건너뜁니다.</div>
+      </div>
+      <div class="field">
+        <label>일기 문체 일괄 변환 <span style="color:var(--text-muted); font-size:11px;">(기간 내 일기를 AI로 다시 써서 덮어씀 — 시작 전 JSON 백업 자동 다운로드)</span></label>
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <input type="date" id="restyle-start" style="width:150px;" />
+          <span style="color:var(--text-muted);">~</span>
+          <input type="date" id="restyle-end" style="width:150px;" />
+        </div>
+        <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
+          <select id="restyle-style">
+            <option value="junghyun" selected>✍️ 정현체 (내 문체)</option>
+            <option value="">문체 유지 (어투만 변환)</option>
+            <option value="emotional">감성 에세이</option>
+            <option value="humor">유쾌·재치</option>
+            <option value="concise">간결한 기록</option>
+            <option value="poetic">시적·서정</option>
+            <option value="kid">어린이 그림일기</option>
+          </select>
+          <select id="restyle-tone">
+            <option value="plain" selected>간결한 기록체 (~했다)</option>
+            <option value="">어투 유지</option>
+            <option value="banmal">친근한 반말 (~했어)</option>
+            <option value="polite">부드러운 존댓말 (~했어요)</option>
+            <option value="formal">정중한 격식체 (~했습니다)</option>
+          </select>
+        </div>
+        <button type="button" id="restyle-btn" class="btn btn-ghost" style="width:auto; padding:9px 14px; margin-top:6px;">🖋️ 기간 일기 문체 일괄 변환</button>
+        <div class="hint" id="restyle-progress" style="margin-top:4px;"></div>
+      </div>
       <div class="field"><label>일기 작성 프롬프트(가이드)</label><textarea id="cfg-prompt" rows="5"></textarea></div>
       <div class="hint">읽기 권한(drive.readonly)으로 사진만 가져옵니다. 일기는 브라우저에 표시되며, 저장은 복사/다운로드로 합니다.</div>
+
+      <div class="field" style="border-top:1px solid var(--border); margin-top:16px; padding-top:14px;">
+        <label>📦 일기 전체 백업 (내보내기)</label>
+        <div class="hint" style="margin-top:0;">저장된 모든 일기를 한 파일로 내려받습니다. 시트를 잃거나 다른 곳으로 옮길 때의 안전장치예요. (사진은 포함되지 않고 텍스트만)</div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button type="button" id="export-md-btn" class="btn btn-ghost" style="flex:1; padding:9px;">📝 Markdown로</button>
+          <button type="button" id="export-json-btn" class="btn btn-ghost" style="flex:1; padding:9px;">🧩 JSON으로</button>
+        </div>
+      </div>
 
       <div class="field" style="border-top:1px solid var(--border); margin-top:16px; padding-top:14px;">
         <label>📲 설정 내보내기 / 가져오기</label>
@@ -268,19 +343,28 @@
     }
   </script>
 
-  <script src="js/auth.js?v=32"></script>
-  <script src="js/gapi_rest.js?v=32"></script>
-  <script src="js/drive.js?v=32"></script>
-  <script src="js/photos_picker.js?v=32"></script>
-  <script src="js/gemini.js?v=32"></script>
-  <script src="js/diary_store.js?v=32"></script>
-  <script src="js/people_store.js?v=32"></script>
-  <script src="js/migrate.js?v=32"></script>
-  <script src="js/diary.js?v=32"></script>
-  <script src="js/config_modal.js?v=32"></script>
-  <script src="js/main.js?v=32"></script>
+  <script src="js/auth.js?v=48"></script>
+  <script src="js/gapi_rest.js?v=48"></script>
+  <script src="js/drive.js?v=48"></script>
+  <script src="js/photos_picker.js?v=48"></script>
+  <script src="js/gemini.js?v=48"></script>
+  <script src="js/diary_store.js?v=48"></script>
+  <script src="js/people_store.js?v=48"></script>
+  <script src="js/migrate.js?v=48"></script>
+  <script src="js/diary.js?v=48"></script>
+  <script src="js/config_modal.js?v=48"></script>
+  <script src="js/main.js?v=48"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+
+  <!-- PWA 서비스워커 등록(설치형·오프라인 셸). 실패해도 앱 동작엔 영향 없음 -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(e => console.warn('[PWA] SW 등록 실패:', e));
+      });
+    }
+  </script>
 </body>
 </html>

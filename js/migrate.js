@@ -111,5 +111,66 @@ const Migrate = (() => {
     return { docs: docs.length, parsed: all.length, added, skipped, withPhoto };
   }
 
-  return { run, parseDoc };
+  // ── 구글 폼 기록 시트(일자/운동/공부/주요활동/주간요약) → 일기 시트 이관 ─────────
+  function _parseSheetRef(input) {
+    const s = String(input || '').trim();
+    if (!s) return null;
+    const idm = s.match(/\/spreadsheets\/d\/([\w-]+)/);
+    const id = idm ? idm[1] : (/^[\w-]{20,}$/.test(s) ? s : null);
+    if (!id) return null;
+    const gm = s.match(/[#&?]gid=(\d+)/);
+    return { id, gid: gm ? parseInt(gm[1], 10) : null };
+  }
+  function _formDate(s) { // '2020. 1. 13' / '2020-1-13' → '2020-01-13'
+    const m = String(s || '').match(/(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/);
+    if (!m) return '';
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  }
+  const _NOVAL = /^(안\s*함|아니오|아니요|no|n|x|없음|-|0)$/i;
+  // 행 → 일기 엔트리. 주간 요약을 본문으로, 운동/공부/주요활동은 의미 있는 값일 때만 꼬리표 한 줄로.
+  function formRowToEntry(cols, row) {
+    const v = (k) => (cols[k] != null ? String(row[cols[k]] || '').trim() : '');
+    const date = _formDate(v('date'));
+    if (!date) return null;
+    const summary = v('summary');
+    const meta = [];
+    const ex = v('exercise'), st = v('study'), ac = v('activity');
+    if (ex && !_NOVAL.test(ex)) meta.push('운동: ' + ex);
+    if (st && !_NOVAL.test(st)) meta.push('공부: ' + st);
+    if (ac && summary.indexOf(ac) === -1) meta.push('활동: ' + ac); // 본문에 이미 언급되면 생략
+    let text = summary;
+    if (meta.length) text = (text ? text + '\n\n' : '') + '(' + meta.join(' / ') + ')';
+    if (!text.trim()) return null;
+    return { date, text: text.trim() };
+  }
+  // 시트 URL/ID를 받아 폼 기록을 일기 시트로 가져온다(이미 있는 날짜는 bulkAppend가 건너뜀).
+  async function importFormSheet(ref) {
+    const parsed = _parseSheetRef(ref);
+    if (!parsed) throw new Error('시트 URL 또는 ID를 인식하지 못했습니다.');
+    const meta = await REST.sheetGet(parsed.id, 'sheets.properties');
+    const sheets = meta.sheets || [];
+    if (!sheets.length) throw new Error('시트 탭을 찾을 수 없습니다.');
+    const tab = (parsed.gid != null && sheets.find(s => s.properties.sheetId === parsed.gid)) || sheets[0];
+    const title = String(tab.properties.title || '').replace(/'/g, "''");
+    const res = await REST.valuesGet(parsed.id, `'${title}'!A1:Z`);
+    const rows = res.values || [];
+    if (rows.length < 2) throw new Error('데이터 행이 없습니다.');
+    // 헤더에서 열 위치 탐색(느슨 매칭) — 열 순서가 바뀌어도 동작
+    const head = rows[0].map(h => String(h || ''));
+    const find = (re) => head.findIndex(h => re.test(h));
+    const cols = {
+      date: find(/일자|날짜/),
+      summary: find(/요약|일기|내용/),
+      exercise: find(/운동/), study: find(/공부/), activity: find(/활동/),
+    };
+    if (cols.date === -1) throw new Error('"일자" 열을 찾지 못했습니다. (헤더: ' + head.join(', ') + ')');
+    if (cols.summary === -1) throw new Error('"주간 요약" 열을 찾지 못했습니다. (헤더: ' + head.join(', ') + ')');
+    Object.keys(cols).forEach(k => { if (cols[k] === -1) cols[k] = null; });
+    const entries = rows.slice(1).map(r => formRowToEntry(cols, r)).filter(Boolean);
+    if (!entries.length) throw new Error('가져올 수 있는 기록이 없습니다(일자/내용 비어 있음).');
+    const { added, skipped } = await DiaryStore.bulkAppend(entries);
+    return { rows: rows.length - 1, parsed: entries.length, added, skipped };
+  }
+
+  return { run, parseDoc, importFormSheet, formRowToEntry };
 })();

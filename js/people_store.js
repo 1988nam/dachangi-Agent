@@ -129,10 +129,22 @@ const PeopleStore = (() => {
     return people.filter(p => p.status === 'pending').length;
   }
 
-  // 일기 작성 참조용: 이름이 있는(확인된) 인물만
+  // 일기에서 인물을 부를 호칭 — 나·혜영·아가와 친구·직장 동료는 이름 그대로,
+  //  그 외(다른 가족 등)는 관계(예: 장모님)로 부른다. 관계가 비어 있으면 이름으로 폴백.
+  const NAME_CALL = ['나', '혜영', '아가'];
+  function _callAs(p) {
+    // '김혜영'·'혜영이' 같은 변형 저장 허용 — 2자 이상 키워드만 부분일치('나'는 정확일치로 오매칭 방지)
+    if (NAME_CALL.some(k => p.name === k || (k.length >= 2 && (p.name.startsWith(k) || p.name.endsWith(k))))) return p.name;
+    if (p.group === '친구' || p.group === '직장') return p.name;
+    if (/친구|동료|동기/.test(p.relation || '')) return p.name; // 그룹 미설정이어도 관계가 친구류면 이름으로
+    return p.relation || p.name;
+  }
+
+  // 일기 작성 참조용: 이름이 있는(확인된) 인물만. callAs = 일기 본문에서 쓸 호칭.
+  //  memo는 같은 호칭(처형 여러 명 등)을 구분하는 참고 단서로 프롬프트에 쓰인다.
   async function loadForPrompt() {
     const people = await loadPeople();
-    return people.filter(p => p.photo && p.name).map(p => ({ name: p.name, relation: p.relation, mime: 'image/jpeg', data: p.photo }));
+    return people.filter(p => p.photo && p.name).map(p => ({ name: p.name, relation: p.relation, group: p.group, memo: p.memo, callAs: _callAs(p), mime: 'image/jpeg', data: p.photo }));
   }
 
   return { THRESHOLD, GROUPS, loadPeople, addPerson, addObservation, incrementSighting, updatePerson, setGroup, deleteByRow, loadForPrompt, loadAllFaces, countPending };

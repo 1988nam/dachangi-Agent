@@ -123,17 +123,31 @@ const DiaryAgent = (() => {
     for (let i = 0; i < capped.length; i++) {
       const it = capped[i];
       const img = await PhotosPicker.fetchImageBase64(it.baseUrl, 1024);
-      out.push({ ...img, name: it.filename || '', id: '', baseUrl: it.baseUrl }); // baseUrl 보존(저장 시 고화질 재취득용)
+      // baseUrl 보존(저장 시 고화질 재취득용) + createTime 보존(촬영일 자동 감지용)
+      out.push({ ...img, name: it.filename || '', id: '', baseUrl: it.baseUrl, createTime: it.createTime || '' });
       if (s) s.querySelector('span:last-child').textContent = `⬇️ 선택한 사진 불러오는 중... (${i + 1}/${capped.length})`;
     }
     _done(s, `${out.length}장 로드 완료`);
     return out;
   }
 
+  // ── 실패/우회 이력(최근 30건) — 토스트는 순간 표시·콘솔은 새로고침에 소실되어
+  //    나중에 원인 확인이 불가능한 문제 보완. 확인: 브라우저 콘솔에서 DiaryAgent.failLog()
+  const FAIL_LOG_KEY = 'dachangi_fail_log';
+  function _logFail(stage, msg) {
+    console.warn(`[Diary:${stage}]`, msg);
+    try {
+      const log = JSON.parse(localStorage.getItem(FAIL_LOG_KEY) || '[]');
+      log.push({ t: new Date().toISOString().slice(0, 19).replace('T', ' '), stage, msg: String(msg) });
+      localStorage.setItem(FAIL_LOG_KEY, JSON.stringify(log.slice(-30)));
+    } catch (_) {}
+  }
+  function failLog() { try { return JSON.parse(localStorage.getItem(FAIL_LOG_KEY) || '[]'); } catch (_) { return []; } }
+
   async function run(opts) {
     if (_busy) return;
     const cfg = window.DACHANGI_CONFIG || {};
-    const dateStr = opts.dateStr;
+    let dateStr = opts.dateStr; // 촬영일 자동 감지로 도중에 교정될 수 있음
     const candCount = Math.max(3, Math.min(20, opts.candCount || 10));
     const topCount = Math.max(1, Math.min(5, opts.topCount || 3));
     const source = cfg.PHOTO_SOURCE || 'photos';
@@ -147,6 +161,8 @@ const DiaryAgent = (() => {
     const restoreCard = () => { if (_last) { const rc = document.getElementById('result-card'); if (rc) rc.style.display = 'block'; } };
     const genBtn = document.getElementById('generate-btn');
     if (genBtn) { genBtn.disabled = true; }
+    const manualBtnR = document.getElementById('manual-btn');
+    if (manualBtnR) { manualBtnR.disabled = true; }
 
     try {
       // 파이프라인이 수 분 걸릴 수 있어, 토큰 잔여 수명이 짧으면 클릭 제스처 안에서 선제 갱신.
@@ -159,34 +175,61 @@ const DiaryAgent = (() => {
         : await _gatherFromDrive(cfg, dateStr, candCount);
       if (!candImages) { restoreCard(); return; }
 
+      // 촬영일 자동 감지(포토 소스 전용): 고른 사진들의 실제 촬영일이 선택한 날짜와 다르면 교정 제안.
+      //  사진을 보고서야 날짜를 깨닫는 경우, 잘못된 날짜로 자동 저장되기 전에 잡는다.
+      if (source === 'photos') {
+        const counts = {};
+        candImages.forEach(im => { const d = _localDateFromIso(im.createTime); if (d) counts[d] = (counts[d] || 0) + 1; });
+        const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+        if (top && top[0] !== dateStr) {
+          const [photoDate, n] = top;
+          if (confirm(`고른 사진 ${candImages.length}장 중 ${n}장이 ${photoDate} 촬영입니다.\n(선택한 날짜: ${dateStr})\n\n[확인] ${photoDate} 일기로 작성 / [취소] ${dateStr} 그대로`)) {
+            dateStr = photoDate;
+            const dEl = document.getElementById('diary-date'); if (dEl) dEl.value = dateStr;
+            showToast(`작성 날짜를 촬영일(${dateStr})로 바꿨어요.`);
+          }
+        }
+      }
+
       let s = _step('🤖 Gemini로 대표 사진 랭킹 중...', true);
       const rankRes = await GeminiAPI.rankPhotos(candImages, topCount);
-      if (rankRes.skip) { _done(s, '적합한 사진 없음'); showToast(`일기 작성 SKIP: ${rankRes.reason || '적합한 사진 없음'}`, 'error'); restoreCard(); return; }
       // 1-based → 후보 인덱스 매핑 (중복 번호 응답 방어)
       const topImages = [];
       const seen = new Set();
-      for (const oneBased of rankRes.ranking) {
-        const idx = oneBased - 1;
-        if (idx >= 0 && idx < candImages.length && !seen.has(idx)) { seen.add(idx); topImages.push(candImages[idx]); }
-        if (topImages.length >= topCount) break;
+      if (!rankRes.skip && Array.isArray(rankRes.ranking)) {
+        for (const oneBased of rankRes.ranking) {
+          const idx = oneBased - 1;
+          if (idx >= 0 && idx < candImages.length && !seen.has(idx)) { seen.add(idx); topImages.push(candImages[idx]); }
+          if (topImages.length >= topCount) break;
+        }
       }
-      if (topImages.length === 0) { _done(s, '매핑된 사진 없음'); showToast('랭킹 결과를 사진에 매핑하지 못했습니다.', 'error'); restoreCard(); return; }
-      _done(s, `대표 사진 ${topImages.length}장 선정`);
+      // 랭킹 SKIP/매핑 실패로 더는 중단하지 않는다 — 직접 고른(또는 그날 찍은) 사진이므로
+      // 해상도순 상위로 계속 진행(밀린 일기 일괄 생성과 동일 정책). 사유는 토스트+실패 로그에 남긴다.
+      if (!topImages.length) {
+        const why = rankRes.reason || '적합한 사진 없음';
+        _logFail('랭킹', `${dateStr}: AI 랭킹 SKIP(${why}) → 해상도순 상위 사진으로 계속 진행`);
+        showToast(`AI가 대표 사진을 못 골랐어요(${why}) — 해상도 순으로 계속 진행합니다.`);
+        for (let i = 0; i < Math.min(topCount, candImages.length); i++) topImages.push(candImages[i]);
+        _done(s, `랭킹 SKIP(${why}) → 해상도순 ${topImages.length}장으로 진행`);
+      } else {
+        _done(s, `대표 사진 ${topImages.length}장 선정`);
+      }
 
       // 등록된 인물(얼굴+이름)을 참조로 전달 → 사진 속 인물 인지
       let people = [];
       try { if (typeof PeopleStore !== 'undefined') people = await PeopleStore.loadForPrompt(); } catch (_) {}
 
       const style = await _resolveStyle(opts.style, dateStr);
-      s = _step(`✍️ Gemini로 일기 작성 중...${people.length ? ` (인물 ${people.length}명 참조)` : ''}`, true);
-      const diary = await GeminiAPI.generateDiary(topImages, dateStr, cfg.DIARY_PROMPT || '', people, style);
-      if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); restoreCard(); return; }
+      const keywords = (opts.keywords || '').trim();
+      s = _step(`✍️ Gemini로 일기 작성 중...${people.length ? ` (인물 ${people.length}명 참조)` : ''}${keywords ? ' · 키워드 반영' : ''}`, true);
+      const diary = await GeminiAPI.generateDiary(topImages, dateStr, cfg.DIARY_PROMPT || '', people, style, keywords);
+      if (!diary || diary.trim().toUpperCase() === 'SKIP') { _logFail('작성', `${dateStr}: AI가 일기 작성을 SKIP`); _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); restoreCard(); return; }
       _done(s, '일기 작성 완료');
 
       // 사용자가 대표 사진을 직접 고를 수 있도록 후보 전체를 보관(기본 대표 = Gemini 1순위)
       const allImages = candImages;
       const repDefaultIdx = Math.max(0, allImages.indexOf(topImages[0]));
-      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, _uploadCache: {}, bestId: '', bestThumb: '', style };
+      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, _uploadCache: {}, bestId: '', bestThumb: '', style, keywords };
 
       // 기본 대표 사진을 영구·고화질로 보관(포토=드라이브 업로드, 실패 시 시트 썸네일 폴백)
       let bestThumb = '';
@@ -231,17 +274,86 @@ const DiaryAgent = (() => {
         try { await _processFaces(topImages); } catch (_) {} // 인물 대조·감지(비차단)
       } catch (e) {
         if (saveBtn) saveBtn.disabled = false;
+        _logFail('저장', `${dateStr}: 자동 저장 실패 — ${e.message || e}`);
         console.error('[Diary] 자동 저장 실패:', e);
         _done(s, '자동 저장 실패 — 💾 버튼으로 저장하세요');
         showToast('일기는 생성됐지만 자동 저장 실패: ' + (e.message || e), 'error');
       }
     } catch (e) {
+      _logFail('생성', `${dateStr}: ${e.message || e}`);
       console.error('[Diary] 실패:', e);
       showToast('❌ 생성 실패: ' + (e.message || e), 'error');
       restoreCard();
     } finally {
       _busy = false;
       const b = document.getElementById('generate-btn'); if (b) b.disabled = false;
+      const mb = document.getElementById('manual-btn'); if (mb) mb.disabled = false;
+    }
+  }
+
+  // 수동 작성 — Gemini 랭킹/일기 생성을 건너뛰고 사진만 준비해 결과 카드를 연다.
+  //  사진 선택·촬영일 자동감지·대표 사진 선택은 자동(run)과 동일. 본문은 사용자가 직접 쓰고
+  //  💾로 저장(자동 저장하지 않음). 저장된 일기는 '수동'으로 표기되고, 사람 감지는 저장 시 동작.
+  async function runManual(opts) {
+    if (_busy) return;
+    const cfg = window.DACHANGI_CONFIG || {};
+    let dateStr = opts.dateStr; // 촬영일 자동 감지로 교정될 수 있음
+    const candCount = Math.max(3, Math.min(20, opts.candCount || 10));
+    const topCount = Math.max(1, Math.min(5, opts.topCount || 3));
+    const source = cfg.PHOTO_SOURCE || 'photos';
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { showToast('날짜를 선택하세요.', 'error'); return; }
+
+    _busy = true;
+    _clearProgress();
+    document.getElementById('result-card').style.display = 'none';
+    const restoreCard = () => { if (_last) { const rc = document.getElementById('result-card'); if (rc) rc.style.display = 'block'; } };
+    const genBtn = document.getElementById('generate-btn'); if (genBtn) genBtn.disabled = true;
+    const manualBtn = document.getElementById('manual-btn'); if (manualBtn) manualBtn.disabled = true;
+
+    try {
+      // photos 소스는 토큰 갱신 팝업이 포토 선택 팝업의 제스처를 소모하므로 선제 갱신을 건너뜀(run과 동일)
+      if (source !== 'photos') { try { if (Auth.ensureFreshToken) await Auth.ensureFreshToken(10 * 60 * 1000); } catch (_) {} }
+
+      const candImages = source === 'photos'
+        ? await _gatherFromPhotos(cfg, candCount, dateStr)
+        : await _gatherFromDrive(cfg, dateStr, candCount);
+      if (!candImages) { restoreCard(); return; }
+
+      // 촬영일 자동 감지(포토 소스 전용) — 자동 생성과 동일하게, 직접 쓰기 전에 날짜를 바로잡는다
+      if (source === 'photos') {
+        const counts = {};
+        candImages.forEach(im => { const d = _localDateFromIso(im.createTime); if (d) counts[d] = (counts[d] || 0) + 1; });
+        const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+        if (top && top[0] !== dateStr) {
+          const [photoDate, n] = top;
+          if (confirm(`고른 사진 ${candImages.length}장 중 ${n}장이 ${photoDate} 촬영입니다.\n(선택한 날짜: ${dateStr})\n\n[확인] ${photoDate} 일기로 작성 / [취소] ${dateStr} 그대로`)) {
+            dateStr = photoDate;
+            const dEl = document.getElementById('diary-date'); if (dEl) dEl.value = dateStr;
+            showToast(`작성 날짜를 촬영일(${dateStr})로 바꿨어요.`);
+          }
+        }
+      }
+
+      // 랭킹/작성 없이 사진만 준비. 대표 기본 = 해상도 1위(첫 장), 사진ID 저장 대상 = 상위 topCount장.
+      //  사용자가 결과 카드에서 대표 사진을 직접 클릭해 바꿀 수 있다.
+      const allImages = candImages;
+      const topImages = candImages.slice(0, topCount);
+      const s = _step('✍️ 직접 작성 모드 — 사진 준비 완료', true);
+      _done(s, '사진 준비 완료 — 아래에 일기를 직접 쓰고 💾로 저장하세요');
+
+      _last = { dateStr, diary: '', source, allImages, topImages, bestIndex: 0, _uploadCache: {}, bestId: (topImages[0] || {}).id || '', bestThumb: '', style: {}, keywords: '', type: 'manual' };
+      _render(dateStr, allImages, 0, '');
+      const ta = document.getElementById('diary-text'); if (ta) ta.focus();
+    } catch (e) {
+      _logFail('수동작성', `${dateStr}: ${e.message || e}`);
+      console.error('[Diary] 수동 작성 준비 실패:', e);
+      showToast('❌ 사진 준비 실패: ' + (e.message || e), 'error');
+      restoreCard();
+    } finally {
+      _busy = false;
+      if (genBtn) genBtn.disabled = false;
+      if (manualBtn) manualBtn.disabled = false;
     }
   }
 
@@ -339,7 +451,8 @@ const DiaryAgent = (() => {
   }
 
   function _render(dateStr, images, bestIdx, diary) {
-    document.getElementById('result-date').textContent = `· ${dateStr}`;
+    const rd = document.getElementById('result-date');
+    if (rd) rd.value = dateStr; // 날짜를 바꾸고 💾를 누르면 그 날짜로 이동 등록(_finalizeImpl)
     const strip = document.getElementById('photo-strip');
     strip.innerHTML = images.map((im, i) =>
       `<img src="data:${im.mime};base64,${im.data}" data-idx="${i}" class="${i === bestIdx ? 'best' : ''}" title="${_escAttr(im.name || '')}" />`
@@ -350,9 +463,25 @@ const DiaryAgent = (() => {
       strip.querySelectorAll('img').forEach(x => x.classList.toggle('best', parseInt(x.dataset.idx, 10) === idx));
     }));
     document.getElementById('diary-text').value = diary.trim();
+    _markManualCard(_last && _last.type === 'manual'); // 수동/자동에 따라 결과 카드 표기 전환
     // CSS에 #result-card{display:none}이 있어 ''로 두면 다시 숨겨짐 → 'block'으로 명시해야 저장 버튼이 보임
     document.getElementById('result-card').style.display = 'block';
     document.getElementById('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // 결과 카드를 '수동 작성' 모드로 표기 전환 — 뱃지/안내문/플레이스홀더를 바꾸고,
+  //  수동 일기엔 의미 없는 'AI 다시 생성' 버튼은 숨긴다.
+  function _markManualCard(isManual) {
+    const badge = document.getElementById('manual-badge');
+    if (badge) badge.style.display = isManual ? '' : 'none';
+    const meta = document.getElementById('result-meta');
+    if (meta) meta.innerHTML = isManual
+      ? '선정된 사진 — <b>대표로 쓸 사진을 클릭해 고르세요</b> (보라 테두리 = 대표). 아래에 <b>오늘의 일기를 직접 작성</b>하고 💾로 저장하세요.'
+      : '선정된 사진 — <b>대표로 쓸 사진을 클릭해 고르세요</b> (보라 테두리 = 대표). 일기 내용도 아래에서 수정할 수 있어요.';
+    const ta = document.getElementById('diary-text');
+    if (ta) ta.placeholder = isManual ? '여기에 오늘의 일기를 직접 작성하세요...' : '일기가 여기에 표시됩니다.';
+    const regen = document.getElementById('regenerate-btn');
+    if (regen) regen.style.display = isManual ? 'none' : '';
   }
 
   function _escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
@@ -375,7 +504,7 @@ const DiaryAgent = (() => {
 
   // 같은 사진(직전 생성의 대표 후보)으로 본문만 다시 생성 — 문체·어투 변경을 빠르게 비교.
   //  자동 저장하지 않음: 마음에 들면 💾 버튼으로 등록.
-  async function regenerateText(styleOpts) {
+  async function regenerateText(styleOpts, keywords) {
     if (_busy) return;
     if (!_last) { showToast('먼저 일기를 생성하세요.', 'error'); return; }
     const cfg = window.DACHANGI_CONFIG || {};
@@ -385,14 +514,17 @@ const DiaryAgent = (() => {
     if (genBtn) genBtn.disabled = true;
     try {
       const style = await _resolveStyle(styleOpts, _last.dateStr);
+      // 키워드 미전달(undefined)이면 직전 생성 때 값을 유지, 전달되면(빈 문자열 포함) 그 값을 사용
+      const kw = keywords === undefined ? (_last.keywords || '') : String(keywords || '').trim();
       let people = [];
       try { if (typeof PeopleStore !== 'undefined') people = await PeopleStore.loadForPrompt(); } catch (_) {}
-      const s = _step('✍️ 같은 사진으로 일기 다시 쓰는 중...', true);
-      const diary = await GeminiAPI.generateDiary(_last.topImages, _last.dateStr, cfg.DIARY_PROMPT || '', people, style);
+      const s = _step(`✍️ 같은 사진으로 일기 다시 쓰는 중...${kw ? ' (키워드 반영)' : ''}`, true);
+      const diary = await GeminiAPI.generateDiary(_last.topImages, _last.dateStr, cfg.DIARY_PROMPT || '', people, style, kw);
       if (!diary || diary.trim().toUpperCase() === 'SKIP') { _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); return; }
       _done(s, '다시 작성 완료 — 마음에 들면 💾 버튼으로 등록');
       _last.diary = diary;
       _last.style = style;
+      _last.keywords = kw;
       document.getElementById('diary-text').value = diary.trim();
       document.getElementById('result-card').style.display = 'block';
       showToast('✅ 새 문체로 다시 썼어요. 등록하려면 💾를 누르세요.');
@@ -402,6 +534,193 @@ const DiaryAgent = (() => {
     } finally {
       _busy = false;
       const b = document.getElementById('generate-btn'); if (b) b.disabled = false;
+    }
+  }
+
+  // ── 여러 날 일괄 생성 (밀린 일기) ───────────────────────────
+  function _localDateFromIso(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  function _monthsBetween(start, end) {
+    const out = [];
+    let y = parseInt(start.slice(0, 4), 10), m = parseInt(start.slice(5, 7), 10);
+    const ey = parseInt(end.slice(0, 4), 10), em = parseInt(end.slice(5, 7), 10);
+    for (let guard = 0; guard < 240 && (y < ey || (y === ey && m <= em)); guard++) {
+      out.push(`${y}-${String(m).padStart(2, '0')}`);
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return out;
+  }
+  function _batchStep(prog, msg, spinner) {
+    if (prog) prog.innerHTML = `<div class="step"><span>${spinner ? '<span class="spinner"></span>' : '✅'}</span><span>${_escAttr(msg)}</span></div>`;
+  }
+
+  // 포토: 여러 날 사진을 한 번에 골라 촬영일(createTime)별로 그룹핑 → { 'yyyy-MM-dd': [items] }
+  async function _batchGatherPhotos(cfg, prog) {
+    const cancelRef = { cancelled: false };
+    const render = (msg) => {
+      if (!prog) return;
+      prog.innerHTML = `<div class="step"><span class="spinner"></span><span>${_escAttr(msg)}</span> <button type="button" class="btn btn-ghost batch-cancel" style="padding:2px 10px; font-size:11px;">취소</button></div>`;
+      const cb = prog.querySelector('.batch-cancel');
+      if (cb) cb.addEventListener('click', () => { cancelRef.cancelled = true; cb.disabled = true; cb.textContent = '취소 중...'; });
+    };
+    render('📷 포토에서 여러 날 사진을 한 번에 고르고 "완료"를 누르세요...');
+    let picked;
+    try { picked = await PhotosPicker.pick(m => render(m), cancelRef); }
+    catch (e) { showToast('사진 선택 실패: ' + (e.message || e), 'error'); return null; }
+    if (!picked || !picked.length) { showToast('선택된 사진이 없습니다.', 'error'); return null; }
+    const groups = {};
+    let undated = 0;
+    picked.forEach(it => {
+      const d = _localDateFromIso(it.createTime);
+      if (!d) { undated++; return; }
+      (groups[d] = groups[d] || []).push({ baseUrl: it.baseUrl, width: it.width || 0, height: it.height || 0, filename: it.filename || '' });
+    });
+    if (undated) showToast(`촬영일을 알 수 없는 ${undated}장은 제외했습니다.`);
+    return groups;
+  }
+
+  // 드라이브: 기간(start~end)에 걸친 월 폴더들을 훑어 날짜별 그룹핑
+  async function _batchGatherDrive(cfg, startDate, endDate, prog) {
+    if (!cfg.MAIN_PHOTO_FOLDER_ID) { showToast('설정에서 사진 메인 폴더 ID를 입력하세요.', 'error'); return null; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate || '')) { showToast('시작/끝 날짜를 선택하세요.', 'error'); return null; }
+    if (startDate > endDate) { showToast('시작 날짜가 끝 날짜보다 늦습니다.', 'error'); return null; }
+    const groups = {};
+    for (const m of _monthsBetween(startDate, endDate)) {
+      _batchStep(prog, `📁 ${m} 폴더 사진 조회 중...`, true);
+      const folder = await DriveAPI.findMonthFolder(cfg.MAIN_PHOTO_FOLDER_ID, m);
+      if (!folder) continue;
+      const all = await DriveAPI.listImages(folder.id);
+      all.forEach(p => {
+        const d = DriveAPI.photoDateStr(p);
+        if (d >= startDate && d <= endDate) (groups[d] = groups[d] || []).push(p);
+      });
+    }
+    return groups;
+  }
+
+  // 일괄 생성용 키워드 파싱 — 한 줄에 하나씩. "yyyy-MM-dd: 키워드"는 그날 전용, 날짜 없는 줄은 전체 공통.
+  function _parseBatchKeywords(raw) {
+    const perDate = {}; const common = [];
+    String(raw || '').split('\n').forEach(line => {
+      const t = line.trim(); if (!t) return;
+      const m = t.match(/^(\d{4}-\d{2}-\d{2})\s*[:：]\s*(.+)$/);
+      if (m) perDate[m[1]] = (perDate[m[1]] ? perDate[m[1]] + ', ' : '') + m[2].trim();
+      else common.push(t);
+    });
+    return { perDate, common: common.join(', ') };
+  }
+
+  // 한 날짜의 사진들로 일기 1편 작성·저장(결과 카드 없이 바로 저장). 단건 run()의 축약판.
+  async function _batchGenerateOne(cfg, source, date, items, candCount, topCount, style, people, keywords) {
+    let cands;
+    if (source === 'photos') {
+      const sorted = items.slice().sort((a, b) => (b.width * b.height) - (a.width * a.height)).slice(0, candCount);
+      cands = [];
+      for (const it of sorted) {
+        const img = await PhotosPicker.fetchImageBase64(it.baseUrl, 1024);
+        cands.push({ mime: img.mime, data: img.data, id: '', baseUrl: it.baseUrl, name: it.filename || '' });
+      }
+    } else {
+      const sel = DriveAPI.selectByResolution(items, candCount);
+      cands = [];
+      for (const c of sel) {
+        const img = await DriveAPI.fetchImageBase64(c.id, 1024);
+        cands.push({ mime: img.mime, data: img.data, id: c.id, name: c.name });
+      }
+    }
+    if (!cands.length) throw new Error('사진 로드 실패');
+
+    const rankRes = await GeminiAPI.rankPhotos(cands, topCount);
+    const topImages = [];
+    const seen = new Set();
+    if (!rankRes.skip && Array.isArray(rankRes.ranking)) {
+      for (const ob of rankRes.ranking) {
+        const idx = ob - 1;
+        if (idx >= 0 && idx < cands.length && !seen.has(idx)) { seen.add(idx); topImages.push(cands[idx]); }
+        if (topImages.length >= topCount) break;
+      }
+    }
+    // 랭킹 실패/SKIP이어도 그날 찍은(또는 직접 고른) 사진이므로 해상도순 상위로 진행
+    if (!topImages.length) {
+      if (rankRes.skip) _logFail('랭킹', `${date}: AI 랭킹 SKIP(${rankRes.reason || '사유 없음'}) → 해상도순으로 진행`);
+      for (let i = 0; i < Math.min(topCount, cands.length); i++) topImages.push(cands[i]);
+    }
+
+    const diary = await GeminiAPI.generateDiary(topImages, date, cfg.DIARY_PROMPT || '', people, style, keywords);
+    if (!diary || diary.trim().toUpperCase() === 'SKIP') throw new Error('AI 작성 SKIP');
+
+    let bestId = (topImages[0] || {}).id || '';
+    let thumb = '';
+    if (source === 'photos' && topImages[0]) {
+      const rep = topImages[0];
+      try {
+        const hi = rep.baseUrl ? await PhotosPicker.fetchImageBase64(rep.baseUrl, 2048) : { mime: rep.mime, data: rep.data };
+        bestId = await DriveAPI.uploadPhoto(`${date} 대표.jpg`, hi.data, hi.mime);
+      } catch (e) { bestId = ''; try { thumb = await _makeThumb(rep, 512); } catch (_) {} }
+    }
+    await DiaryStore.saveEntry({
+      date, text: diary.trim(),
+      bestPhotoId: bestId || (topImages[0] || {}).id || '',
+      photoIds: topImages.map(t => t.id).filter(Boolean),
+      thumb,
+    });
+  }
+
+  // 여러 날을 한 번에 — 포토는 다중 선택, 드라이브는 기간. 이미 일기가 있는 날은 건너뜀.
+  async function runBatch(opts) {
+    if (_busy) return;
+    const cfg = window.DACHANGI_CONFIG || {};
+    const candCount = Math.max(3, Math.min(20, opts.candCount || 10));
+    const topCount = Math.max(1, Math.min(5, opts.topCount || 3));
+    const source = cfg.PHOTO_SOURCE || 'photos';
+    const prog = document.getElementById('batch-progress');
+    _busy = true;
+    const btn = document.getElementById('batch-btn'); if (btn) btn.disabled = true;
+    const genBtn = document.getElementById('generate-btn'); if (genBtn) genBtn.disabled = true;
+    try {
+      // 드라이브만 선제 토큰 갱신(포토는 갱신 팝업이 선택 팝업 제스처를 소모하므로 건너뜀)
+      if (source !== 'photos') { try { if (Auth.ensureFreshToken) await Auth.ensureFreshToken(10 * 60 * 1000); } catch (_) {} }
+
+      const groups = source === 'photos'
+        ? await _batchGatherPhotos(cfg, prog)
+        : await _batchGatherDrive(cfg, opts.startDate, opts.endDate, prog);
+      if (!groups) return;
+      const dates = Object.keys(groups).sort();
+      if (!dates.length) { _batchStep(prog, '대상 날짜의 사진이 없습니다.', false); showToast('처리할 사진이 없습니다.', 'error'); return; }
+
+      // 이미 있는 날짜는 건너뜀(최신 시트 기준)
+      let existing = new Set();
+      try { existing = new Set((await DiaryStore.loadEntries()).map(e => e.date)); } catch (_) {}
+      let people = [];
+      try { if (typeof PeopleStore !== 'undefined') people = await PeopleStore.loadForPrompt(); } catch (_) {}
+      const style = await _resolveStyle(opts.style, dates[0]); // 'mine' 문체 예시는 한 번만 로드
+      const kw = _parseBatchKeywords(opts.keywords); // 공통 + 날짜별 키워드
+
+      let made = 0, skipped = 0, failed = 0; const failedDates = [];
+      for (let i = 0; i < dates.length; i++) {
+        const date = dates[i];
+        if (existing.has(date)) { skipped++; continue; }
+        const dayKw = [kw.common, kw.perDate[date]].filter(Boolean).join(', ');
+        _batchStep(prog, `(${i + 1}/${dates.length}) ${date} — 사진 ${groups[date].length}장으로 일기 쓰는 중...${dayKw ? ' (키워드 반영)' : ''}`, true);
+        try { await _batchGenerateOne(cfg, source, date, groups[date], candCount, topCount, style, people, dayKw); made++; }
+        catch (e) { console.warn('[Batch]', date, e.message || e); failed++; failedDates.push(date); }
+      }
+      _batchStep(prog, `완료 — 새 일기 ${made}편 · 건너뜀 ${skipped}${failed ? ` · 실패 ${failed} (${failedDates.join(', ')})` : ''}`, false);
+      if (typeof renderMonthList === 'function') renderMonthList();
+      showToast(`✅ 밀린 일기 ${made}편 작성 (건너뜀 ${skipped}, 실패 ${failed})`);
+    } catch (e) {
+      console.error('[Batch] 실패:', e);
+      if (prog) prog.innerHTML = `<div class="step"><span>❌</span><span>${_escAttr(e.message || e)}</span></div>`;
+      showToast('❌ 일괄 생성 실패: ' + (e.message || e), 'error');
+    } finally {
+      _busy = false;
+      if (btn) btn.disabled = false;
+      if (genBtn) genBtn.disabled = false;
     }
   }
 
@@ -417,7 +736,22 @@ const DiaryAgent = (() => {
   }
   async function _finalizeImpl(text) {
     const snap = _last; // 도중에 onEntryDeleted 등이 _last를 null로 바꿔도 동일 객체를 끝까지 참조(크래시 방지)
-    const { dateStr, allImages, topImages, source } = snap;
+    const { allImages, topImages, source } = snap;
+    // 결과 카드에서 날짜를 바꿨으면 그 날짜로 등록 — 자동 저장된 옛 날짜 행을 이동.
+    //  새 날짜에 이미 일기가 있으면 updateEntry가 거부(다른 날 일기를 모르고 덮어쓰는 사고 방지).
+    const rd = document.getElementById('result-date');
+    const newDate = (rd && /^\d{4}-\d{2}-\d{2}$/.test(rd.value || '')) ? rd.value : snap.dateStr;
+    if (newDate !== snap.dateStr) {
+      try {
+        await DiaryStore.updateEntry(snap.dateStr, newDate, (text || '').trim());
+      } catch (e) {
+        // 자동 저장이 실패해 옛 행이 없으면 새 날짜로 새로 저장(아래 saveEntry가 수행). 날짜 충돌 등은 그대로 알림.
+        if (!/찾을 수 없/.test(e.message || '')) throw e;
+      }
+      snap.dateStr = newDate;
+      const dEl = document.getElementById('diary-date'); if (dEl) dEl.value = newDate;
+    }
+    const dateStr = snap.dateStr;
     const idx = snap.bestIndex || 0;
     const rep = allImages[idx];
     let bestId = '';
@@ -444,12 +778,18 @@ const DiaryAgent = (() => {
       bestPhotoId: bestId || (rep || {}).id || '',
       photoIds: topImages.map(t => t.id).filter(Boolean),
       thumb: thumb,
+      type: snap.type || '', // 'manual'이면 '수동'으로 표기 저장
     });
     snap.diary = text;
     snap.bestId = bestId;
     snap.bestThumb = thumb;
+    // 수동 일기는 자동 저장이 없어 여기서 인물 감지를 1회 실행(자동 생성의 _processFaces와 동일 역할, 비차단)
+    if (snap.type === 'manual' && !snap._facesProcessed) {
+      snap._facesProcessed = true;
+      try { _processFaces(topImages).catch(() => {}); } catch (_) {}
+    }
     return { ok: true };
   }
 
-  return { run, getLast, setBestIndex, finalize, regenerateText, onEntryDateChanged, onEntryDeleted };
+  return { run, runManual, runBatch, getLast, setBestIndex, finalize, regenerateText, onEntryDateChanged, onEntryDeleted, failLog };
 })();

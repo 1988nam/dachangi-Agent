@@ -144,6 +144,8 @@ const Auth = (() => {
     _silentAttempted = false;
     localStorage.removeItem('dachangi_access_token');
     localStorage.removeItem('dachangi_token_expiry');
+    // 기기 내 일기 사진 캐시(서비스워커 PHOTO_CACHE)도 함께 삭제 — 로그아웃 후 열람 방지
+    try { caches.delete('dachangi-photos-v1'); } catch (_) {}
     try { gapi.client.setToken(null); } catch (_) {}
     if (onLogoutCallback) onLogoutCallback();
   }

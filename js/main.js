@@ -31,6 +31,70 @@ function _closeSidebar() {
 }
 function _esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+// ── 연속기록·통계 ──────────────────────────────────────────
+function _computeStats(entries) {
+  const dates = new Set((entries || []).map(e => e.date).filter(Boolean));
+  const now = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const ym = `${now.getFullYear()}-${p(now.getMonth() + 1)}`;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  let monthCount = 0;
+  dates.forEach(d => { if (d.slice(0, 7) === ym) monthCount++; });
+  // 연속 기록: 오늘(없으면 어제)부터 거꾸로 연속된 날 수
+  const fmt = (dt) => `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+  let streak = 0;
+  const cur = new Date();
+  if (!dates.has(fmt(cur))) cur.setDate(cur.getDate() - 1);
+  while (dates.has(fmt(cur))) { streak++; cur.setDate(cur.getDate() - 1); }
+  return { total: dates.size, monthCount, daysInMonth, streak };
+}
+function renderStats() {
+  const el = document.getElementById('stats-bar');
+  if (!el) return;
+  const entries = _entriesCache || [];
+  if (!entries.length) { el.style.display = 'none'; return; }
+  const s = _computeStats(entries);
+  el.style.display = '';
+  el.innerHTML =
+    `<div class="stat-chip"><span class="stat-num">🔥 ${s.streak}</span><span class="stat-label">연속 기록(일)</span></div>` +
+    `<div class="stat-chip"><span class="stat-num">${s.monthCount}/${s.daysInMonth}</span><span class="stat-label">이번 달 채움</span></div>` +
+    `<div class="stat-chip"><span class="stat-num">📚 ${s.total}</span><span class="stat-label">전체 일기</span></div>`;
+}
+
+// ── 전체 백업 내보내기 ─────────────────────────────────────
+function _downloadFile(name, text, mime) {
+  const blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function _exportStamp() {
+  const d = new Date(); const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+}
+function _sortedEntries() {
+  return (_entriesCache || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+function exportDiariesMarkdown() {
+  const entries = _sortedEntries();
+  if (!entries.length) { showToast('내보낼 일기가 없습니다.', 'error'); return; }
+  let md = `# 다챙이 일기 (${entries.length}편)\n\n`;
+  entries.forEach(e => { md += `## ${e.date}\n\n${e.text || ''}\n\n---\n\n`; });
+  _downloadFile(`다챙이 일기 ${_exportStamp()}.md`, md, 'text/markdown');
+  showToast(`📝 ${entries.length}편을 Markdown으로 내보냈습니다.`);
+}
+function exportDiariesJson() {
+  const entries = _sortedEntries().map(e => ({
+    date: e.date, text: e.text, bestPhotoId: e.bestPhotoId || '', photoIds: e.photoIds || [], createdAt: e.createdAt || '',
+  }));
+  if (!entries.length) { showToast('내보낼 일기가 없습니다.', 'error'); return; }
+  const payload = { app: 'dachangi', exportedAt: new Date().toISOString(), count: entries.length, entries };
+  _downloadFile(`다챙이 일기 ${_exportStamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  showToast(`🧩 ${entries.length}편을 JSON으로 내보냈습니다.`);
+}
+
 function onLoginSuccess(user) {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
@@ -46,6 +110,9 @@ function onLoginSuccess(user) {
         : '⚠️ 설정에서 <b>사진 메인 폴더 ID</b>를 먼저 입력하세요.';
     }
   }
+  // 일괄 생성: 드라이브 소스일 때만 기간 입력을 보여줌(포토는 창에서 다중 선택)
+  const batchRange = document.getElementById('batch-drive-range');
+  if (batchRange) batchRange.style.display = ((cfg.PHOTO_SOURCE || 'photos') === 'drive') ? '' : 'none';
   showWrite();
   renderMonthList();
   updatePeopleBadge();
@@ -219,7 +286,38 @@ function _enterEditMode(item, date) {
         <label style="font-size:12px; color:var(--text-muted);">날짜</label>
         <input type="date" class="hist-edit-date" value="${_esc(date)}" style="width:170px;" />
       </div>
-      <textarea class="hist-edit-area" style="width:100%; min-height:200px;">${_esc(text)}</textarea>`;
+      <textarea class="hist-edit-area" style="width:100%; min-height:200px;">${_esc(text)}</textarea>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:flex-end; margin-top:8px;">
+        <div class="field">
+          <label style="font-size:12px; color:var(--text-muted);">문체</label>
+          <select class="hist-style">
+            <option value="">문체 유지</option>
+            <option value="junghyun">✍️ 정현체 (내 문체)</option>
+            <option value="mine">📖 내 일기 문체 따라쓰기</option>
+            <option value="emotional">감성 에세이</option>
+            <option value="humor">유쾌·재치</option>
+            <option value="concise">간결한 기록</option>
+            <option value="poetic">시적·서정</option>
+            <option value="kid">어린이 그림일기</option>
+          </select>
+        </div>
+        <div class="field">
+          <label style="font-size:12px; color:var(--text-muted);">어투</label>
+          <select class="hist-tone">
+            <option value="">어투 유지</option>
+            <option value="plain">간결한 기록체 (~했다)</option>
+            <option value="banmal">친근한 반말 (~했어)</option>
+            <option value="polite">부드러운 존댓말 (~했어요)</option>
+            <option value="formal">정중한 격식체 (~했습니다)</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1; min-width:200px;">
+          <label style="font-size:12px; color:var(--text-muted);">키워드 (선택 — 잘못된 맥락 교정)</label>
+          <input type="text" class="hist-keywords" placeholder="예: 회사 워크샵 (친구 모임 아님)" />
+        </div>
+        <button class="btn btn-ghost hist-rewrite" style="padding:6px 12px;">🔄 AI로 다시 쓰기</button>
+      </div>
+      <div class="hint" style="margin-top:6px;">문체/어투를 고르거나 키워드로 실제 맥락을 알려주고 다시 쓰기를 누르세요 — 키워드는 잘못 쓰인 사실(누구와·어디서)을 교정합니다. <b>💾 저장을 눌러야 시트에 반영</b>됩니다.</div>`;
     body.style.whiteSpace = 'normal';
   }
   if (actions) actions.innerHTML = `<button class="btn hist-save" style="padding:6px 12px;">💾 저장</button><button class="btn btn-ghost hist-cancel" style="padding:6px 12px;">취소</button>`;
@@ -233,7 +331,7 @@ function _renderViewMode(item, date) {
   // 접힌 미리보기도 갱신 — 안 하면 수정 저장 후 접었을 때 옛 텍스트가 보임
   const pv = item.querySelector('.hist-preview');
   if (pv && entry) pv.textContent = entry.text.slice(0, 140) + (entry.text.length > 140 ? '…' : '');
-  if (actions) actions.innerHTML = `<button class="btn btn-ghost hist-edit" style="padding:6px 12px;">✏️ 수정</button><button class="btn btn-ghost hist-del" style="padding:6px 12px;">🗑️ 삭제</button>`;
+  if (actions) actions.innerHTML = `<button class="btn btn-ghost hist-edit" style="padding:6px 12px;">✏️ 수정</button><button class="btn btn-ghost hist-photo-change" style="padding:6px 12px;">📷 사진 변경</button><button class="btn btn-ghost hist-del" style="padding:6px 12px;">🗑️ 삭제</button>`;
 }
 async function _saveEdit(item, date) {
   const area = item.querySelector('.hist-edit-area');
@@ -274,6 +372,65 @@ async function _deleteDiary(item, date) {
   } catch (e) { showToast('삭제 실패: ' + (e.message || e), 'error'); }
 }
 
+// 기존 일기의 대표 사진 교체 — 구글 포토에서 새로 골라 드라이브에 영구 저장 후 시트 C/F열 갱신.
+//  진행 중 같은 버튼을 다시 누르면 취소(포토 창을 그냥 닫으면 폴링이 한동안 남기 때문).
+async function _changePhoto(item, date) {
+  const btn = item.querySelector('.hist-photo-change');
+  if (btn && btn.dataset.busy === '1') { if (btn._cancelRef) btn._cancelRef.cancelled = true; return; }
+  const cancelRef = { cancelled: false };
+  if (btn) { btn.dataset.busy = '1'; btn._cancelRef = cancelRef; btn.textContent = '📷 선택 중… (다시 누르면 취소)'; }
+  const restore = () => { if (btn) { btn.dataset.busy = ''; btn._cancelRef = null; btn.textContent = '📷 사진 변경'; } };
+  try {
+    const picked = await PhotosPicker.pick(() => {}, cancelRef);
+    if (!picked || !picked.length) { showToast('선택된 사진이 없습니다.', 'error'); restore(); return; }
+    if (picked.length > 1) showToast('여러 장 중 첫 번째 사진을 대표로 사용합니다.');
+    if (btn) btn.textContent = '☁️ 저장 중...';
+    const hi = await PhotosPicker.fetchImageBase64(picked[0].baseUrl, 2048);
+    const newId = await DriveAPI.uploadPhoto(`${date} 대표.jpg`, hi.data, hi.mime);
+    await DiaryStore.updatePhoto(date, newId, '');
+    // 캐시·카드 화면 갱신(시트 재로드 없이)
+    const entry = _entriesCache.find(e => e.date === date);
+    if (entry) { entry.bestPhotoId = newId; entry.thumb = ''; }
+    item.setAttribute('data-best', newId);
+    const ph = item.querySelector('.hist-photo');
+    if (ph) {
+      ph.dataset.loaded = '1';
+      ph.innerHTML = '<span class="hint">🖼️ 새 사진 불러오는 중...</span>';
+      try { const url = await DriveAPI.fetchThumbDataUrl(newId, 1280); ph.innerHTML = `<img src="${url}" style="max-width:480px; width:100%; border-radius:10px; border:1px solid var(--border);" />`; }
+      catch (_) { ph.innerHTML = '<span class="hint">사진을 불러오지 못했습니다.</span>'; }
+    }
+    showToast('✅ 대표 사진이 변경되었습니다.');
+  } catch (e) {
+    showToast('사진 변경 실패: ' + (e.message || e), 'error');
+  } finally { restore(); }
+}
+
+// 편집 모드에서 본문을 새 문체/어투/키워드로 다시 쓰기 — 키워드는 잘못 쓰인 맥락 교정용. 💾 저장 전까지 시트 미반영.
+async function _rewriteInEdit(item) {
+  const area = item.querySelector('.hist-edit-area'); if (!area) return;
+  const styleKey = (item.querySelector('.hist-style') || {}).value || '';
+  const toneKey = (item.querySelector('.hist-tone') || {}).value || '';
+  const keywords = ((item.querySelector('.hist-keywords') || {}).value || '').trim();
+  if (!styleKey && !toneKey && !keywords) { showToast('바꿀 문체/어투를 고르거나 키워드를 입력하세요.', 'error'); return; }
+  if (!area.value.trim()) { showToast('다시 쓸 내용이 없습니다.', 'error'); return; }
+  // 📖 내 일기 문체: 저장된 다른 일기들을 예시로 (단건 생성의 _resolveStyle과 동일 규칙)
+  let samples = [];
+  if (styleKey === 'mine') {
+    samples = _entriesCache
+      .filter(en => en.date !== item.dataset.date && (en.text || '').trim().length >= 50)
+      .slice(0, 3).map(en => en.text.slice(0, 1200));
+    if (!samples.length) { showToast('참고할 다른 일기가 없어 내 문체를 적용할 수 없습니다.', 'error'); return; }
+  }
+  const btn = item.querySelector('.hist-rewrite'); const o = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '✍️ 다시 쓰는 중...'; }
+  try {
+    const out = await GeminiAPI.rewriteDiary(area.value, { styleKey, toneKey, samples }, keywords);
+    if (out && out.trim()) { area.value = out.trim(); showToast('✅ 다시 썼어요 — 마음에 들면 💾 저장을 누르세요.'); }
+    else showToast('다시 쓰기 결과가 비어 있습니다.', 'error');
+  } catch (e) { showToast('다시 쓰기 실패: ' + (e.message || e), 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = o; } }
+}
+
 // 엔트리 카드 HTML (월 뷰·검색 공용). data-date로 특정 일기 펼침 가능.
 function _entryCardsHtml(entries) {
   if (!entries.length) return '<div class="hint">일기가 없습니다.</div>';
@@ -283,18 +440,20 @@ function _entryCardsHtml(entries) {
     const photoHtml = e.thumb
       ? `<img src="data:image/jpeg;base64,${e.thumb}" style="max-width:480px; width:100%; border-radius:10px; border:1px solid var(--border);" />`
       : '';
+    const manualTag = e.type === 'manual' ? ' <span class="manual-tag">✍️ 수동</span>' : '';
     return `
       <div class="diary-entry hist-item" data-date="${_esc(e.date)}" data-best="${_esc(e.bestPhotoId)}" data-expanded="0">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong>📅 ${_esc(e.date)}</strong>
+          <strong>📅 ${_esc(e.date)}${manualTag}</strong>
           <span class="hist-arrow" style="color:var(--text-muted); font-size:12px;">▼</span>
         </div>
         <div class="hist-preview" style="color:var(--text-secondary); font-size:13px; margin-top:6px;">${preview}${e.text.length > 140 ? '…' : ''}</div>
         <div class="hist-full" style="display:none; margin-top:10px;">
           <div class="hist-photo" style="margin-bottom:10px;"${e.thumb ? ' data-loaded="1"' : ''}>${photoHtml}</div>
           <div class="hist-body" style="white-space:pre-wrap; line-height:1.7; font-size:14px;">${_esc(e.text)}</div>
-          <div class="hist-actions" style="margin-top:10px; display:flex; gap:8px;">
+          <div class="hist-actions" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn btn-ghost hist-edit" style="padding:6px 12px;">✏️ 수정</button>
+            <button class="btn btn-ghost hist-photo-change" style="padding:6px 12px;">📷 사진 변경</button>
             <button class="btn btn-ghost hist-del" style="padding:6px 12px;">🗑️ 삭제</button>
           </div>
         </div>
@@ -334,6 +493,24 @@ function showMonth(month) {
   document.getElementById('month-diaries').innerHTML = entries.length
     ? `<div class="hint" style="text-align:center; padding:10px;">📅 달력에서 <b>색칠된 날짜</b>를 클릭하면 그날 일기를 봅니다. (이 달 일기 ${entries.length}건)</div>`
     : '<div class="hint">이 달에 저장된 일기가 없습니다.</div>';
+  _prefetchMonthPhotos(entries);
+}
+
+// 그 달 일기 대표사진을 백그라운드 프리페치(동시 2개) — 날짜 클릭 시 캐시 적중으로 즉시 표시.
+// 프록시만 시도하고 실패는 조용히 무시(원본 다운로드 폴백 없음). 다른 달로 이동하면 남은 루프 중단.
+let _prefetchSeq = 0;
+async function _prefetchMonthPhotos(entries) {
+  if (typeof DriveAPI === 'undefined' || !DriveAPI.prefetchThumb || !Auth.isLoggedIn()) return;
+  const ids = [...new Set(entries.map(e => e.bestPhotoId).filter(Boolean))];
+  const seq = ++_prefetchSeq;
+  let i = 0;
+  const worker = async () => {
+    while (i < ids.length && seq === _prefetchSeq) {
+      const id = ids[i++];
+      try { await DriveAPI.prefetchThumb(id, 1280); } catch (_) {}
+    }
+  };
+  await Promise.all([worker(), worker()]);
 }
 
 // 특정 날짜의 일기만 단독 표시 (달력 숨김, 본문엔 그 하루만)
@@ -393,21 +570,44 @@ async function renderMonthList() {
   const prevActiveEl = document.querySelector('.month-row.active');
   const prevMonth = prevActiveEl ? prevActiveEl.dataset.month : '';
   const prevOpen = Array.from(listEl.querySelectorAll('.date-sub.open')).map(s => s.dataset.month);
+  const prevOpenYears = Array.from(listEl.querySelectorAll('.year-sub.open')).map(s => s.dataset.year);
   listEl.innerHTML = '<div class="hint" style="padding:6px 4px;">⏳ 불러오는 중...</div>';
   try { _entriesCache = await DiaryStore.loadEntries(); }
   catch (e) { listEl.innerHTML = `<div class="hint" style="padding:6px 4px; color:var(--red)">❌ ${_esc(e.message || e)}</div>`; return; }
+  renderStats();
   if (!_entriesCache.length) { listEl.innerHTML = '<div class="hint" style="padding:6px 4px;">저장한 일기 없음.<br/>일기를 만들고 💾 저장하세요.</div>'; return; }
   const byMonth = {};
   _entriesCache.forEach(e => { const m = (e.date || '').slice(0, 7); if (!m) return; (byMonth[m] = byMonth[m] || []).push(e.date); });
   const months = Object.keys(byMonth).sort().reverse();
-  listEl.innerHTML = months.map(m => {
+  // 올해 월은 최상위에 그대로(1클릭 접근), 과거 연도는 「▸ yyyy년」 그룹으로 접어 스크롤을 줄인다.
+  const curYear = String(new Date().getFullYear());
+  const curMonths = months.filter(m => m.slice(0, 4) === curYear);
+  const pastYears = {}; // '2024' → ['2024-01', ...]
+  months.forEach(m => { const y = m.slice(0, 4); if (y !== curYear) (pastYears[y] = pastYears[y] || []).push(m); });
+  const monthBlock = (m, inYear) => {
     const dates = byMonth[m].slice().sort().reverse();
+    const label = inYear ? `${parseInt(m.slice(5), 10)}월` : m; // 연도 그룹 안에서는 'n월'로 간결하게
     return `
       <div class="month-block">
-        <button class="month-item month-row" data-month="${m}"><span><span class="month-caret">▸</span>${m}</span><span class="cnt">${dates.length}</span></button>
+        <button class="month-item month-row" data-month="${m}" title="${m}"><span><span class="month-caret">▸</span>${label}</span><span class="cnt">${dates.length}</span></button>
         <div class="date-sub" data-month="${m}">${dates.map(d => `<button class="date-item" data-date="${d}">${parseInt(d.slice(8), 10)}일</button>`).join('')}</div>
       </div>`;
-  }).join('');
+  };
+  const YEAR_FLAT_MAX = 15; // 과거 연도 일기가 이 수 이하면 월 단계를 생략하고 날짜를 바로 노출(빈약한 해에 월 그룹은 무의미)
+  listEl.innerHTML = curMonths.map(m => monthBlock(m, false)).join('')
+    + Object.keys(pastYears).sort().reverse().map(y => {
+      const ms = pastYears[y];
+      const total = ms.reduce((s, m) => s + byMonth[m].length, 0);
+      const inner = total <= YEAR_FLAT_MAX
+        ? ms.flatMap(m => byMonth[m].slice().sort().reverse())
+            .map(d => `<button class="date-item" data-date="${d}">${parseInt(d.slice(5, 7), 10)}월 ${parseInt(d.slice(8), 10)}일</button>`).join('')
+        : ms.map(m => monthBlock(m, true)).join('');
+      return `
+      <div class="year-block">
+        <button class="month-item year-row" data-year="${y}"><span><span class="month-caret">▸</span>${y}년</span><span class="cnt">${total}</span></button>
+        <div class="year-sub" data-year="${y}">${inner}</div>
+      </div>`;
+    }).join('');
   listEl.querySelectorAll('.month-row').forEach(btn => btn.addEventListener('click', () => {
     const m = btn.dataset.month;
     const sub = listEl.querySelector(`.date-sub[data-month="${m}"]`);
@@ -416,14 +616,31 @@ async function renderMonthList() {
     if (caret) caret.textContent = open ? '▾' : '▸';
     showMonth(m);
   }));
+  // 연도 행은 펼침/접힘만(이동 없음) — 이동은 월 클릭으로. 동작이 섞이면 오조작이 잦다.
+  listEl.querySelectorAll('.year-row').forEach(btn => btn.addEventListener('click', () => {
+    const sub = listEl.querySelector(`.year-sub[data-year="${btn.dataset.year}"]`);
+    const caret = btn.querySelector('.month-caret');
+    const open = sub.classList.toggle('open');
+    if (caret) caret.textContent = open ? '▾' : '▸';
+  }));
   listEl.querySelectorAll('.date-item').forEach(btn => btn.addEventListener('click', () => showDate(btn.dataset.date)));
-  // 펼쳐 두었던 달 복원
+  // 펼쳐 두었던 연도/달 복원 + 활성·펼친 달이 과거 연도면 그 연도 그룹도 자동 펼침
+  const openYear = (y) => {
+    const sub = listEl.querySelector(`.year-sub[data-year="${y}"]`);
+    if (!sub || sub.classList.contains('open')) return;
+    sub.classList.add('open');
+    const caret = listEl.querySelector(`.year-row[data-year="${y}"] .month-caret`);
+    if (caret) caret.textContent = '▾';
+  };
+  prevOpenYears.forEach(openYear);
   prevOpen.forEach(m => {
     const sub = listEl.querySelector(`.date-sub[data-month="${m}"]`);
     if (sub) sub.classList.add('open');
     const caret = listEl.querySelector(`.month-row[data-month="${m}"] .month-caret`);
     if (caret) caret.textContent = '▾';
+    openYear(m.slice(0, 4));
   });
+  if (prevMonth) openYear(prevMonth.slice(0, 4));
   // 월 뷰가 열려 있으면 같은 달을 다시 그려 새 데이터 반영(새 DOM에는 active가 없으므로 보존값 사용)
   const mv = document.getElementById('view-month');
   if (mv && !mv.classList.contains('hidden') && prevMonth && !document.getElementById('diary-search').value.trim()) {
@@ -455,10 +672,15 @@ function _restoreStylePref() {
   try { p = JSON.parse(localStorage.getItem(STYLE_LS) || 'null'); } catch (_) {}
   if (!p) return;
   const set = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
-  set('style-select', p.styleKey || '');
+  set('style-select', p.styleKey || 'junghyun'); // 빈 값(예전 기본)은 정현체로 — 기본 문체 승격
   set('tone-select', p.toneKey || '');
   set('style-custom', p.customText || '');
   _syncCustomStyleField();
+}
+
+function _keywordsFromUI() {
+  const el = document.getElementById('diary-keywords');
+  return el ? el.value.trim() : '';
 }
 
 function _runFromUI() {
@@ -467,6 +689,27 @@ function _runFromUI() {
     candCount: parseInt(document.getElementById('cand-count').value, 10) || 10,
     topCount: parseInt(document.getElementById('top-count').value, 10) || 3,
     style: _styleFromUI(),
+    keywords: _keywordsFromUI(),
+  });
+}
+
+// 수동 작성 — Gemini 없이 사진만 골라 결과 카드를 열고, 본문은 직접 쓴다(문체/키워드 불필요).
+function _runManualFromUI() {
+  DiaryAgent.runManual({
+    dateStr: document.getElementById('diary-date').value,
+    candCount: parseInt(document.getElementById('cand-count').value, 10) || 10,
+    topCount: parseInt(document.getElementById('top-count').value, 10) || 3,
+  });
+}
+
+function _runBatchFromUI() {
+  DiaryAgent.runBatch({
+    candCount: parseInt(document.getElementById('cand-count').value, 10) || 10,
+    topCount: parseInt(document.getElementById('top-count').value, 10) || 3,
+    style: _styleFromUI(),
+    keywords: (document.getElementById('batch-keywords') || {}).value || '',
+    startDate: (document.getElementById('batch-start') || {}).value,
+    endDate: (document.getElementById('batch-end') || {}).value,
   });
 }
 
@@ -474,6 +717,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // 날짜 기본값: 어제
   const dateEl = document.getElementById('diary-date');
   if (dateEl) dateEl.value = _todayMinus(1);
+  // 일괄 생성 기간 기본값: 최근 7일(드라이브 소스용)
+  const bs = document.getElementById('batch-start'); if (bs) bs.value = _todayMinus(7);
+  const be = document.getElementById('batch-end'); if (be) be.value = _todayMinus(1);
 
   // 로그인/설정
   document.getElementById('login-btn').addEventListener('click', () => {
@@ -573,13 +819,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 생성
   document.getElementById('generate-btn').addEventListener('click', _runFromUI);
+  // 직접 쓰기(수동)
+  const _manualBtn = document.getElementById('manual-btn');
+  if (_manualBtn) _manualBtn.addEventListener('click', _runManualFromUI);
+  // 여러 날 일괄 생성
+  const _batchBtn = document.getElementById('batch-btn');
+  if (_batchBtn) _batchBtn.addEventListener('click', _runBatchFromUI);
+  // 일기 전체 백업 내보내기
+  const _expMd = document.getElementById('export-md-btn');
+  if (_expMd) _expMd.addEventListener('click', exportDiariesMarkdown);
+  const _expJson = document.getElementById('export-json-btn');
+  if (_expJson) _expJson.addEventListener('click', exportDiariesJson);
   // 다시 생성: 같은 날짜의 직전 결과가 있으면 사진 재선택 없이 본문만 재생성(문체 변경 반영).
   //  날짜 입력이 직전 생성과 다르면 — 안내문과 달리 전체 파이프라인(자동 저장 = 그 날짜 기존 일기
   //  덮어쓰기)이 돌게 되므로 confirm으로 의도를 확인한다.
   document.getElementById('regenerate-btn').addEventListener('click', () => {
     const last = DiaryAgent.getLast();
     const curDate = document.getElementById('diary-date').value;
-    if (last && last.dateStr === curDate) { DiaryAgent.regenerateText(_styleFromUI()); return; }
+    if (last && last.dateStr === curDate) { DiaryAgent.regenerateText(_styleFromUI(), _keywordsFromUI()); return; }
     if (last && curDate && last.dateStr !== curDate) {
       if (!confirm(`날짜(${curDate})가 직전 생성(${last.dateStr})과 다릅니다.\n${curDate} 사진으로 처음부터 새로 생성할까요?\n(${curDate}에 저장된 일기가 있으면 새 일기로 덮어써집니다)`)) return;
     }
@@ -610,11 +867,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const last = DiaryAgent.getLast();
     if (!last) { showToast('먼저 일기를 생성하세요.', 'error'); return; }
     const text = document.getElementById('diary-text').value;
+    if (last.type === 'manual' && !text.trim()) { showToast('일기 내용을 직접 작성한 뒤 저장하세요.', 'error'); return; }
     const btn = document.getElementById('save-diary-btn'); const o = btn.textContent;
     btn.disabled = true; btn.textContent = '💾 등록 중...';
     try {
       await DiaryAgent.finalize(text); // 수정 텍스트 + 선택한 대표 사진 반영(같은 날짜 덮어쓰기)
-      showToast('✅ 수정·대표 사진이 반영되어 등록되었습니다.');
+      showToast(last.type === 'manual' ? '✅ 직접 쓴 일기가 저장되었습니다.' : '✅ 수정·대표 사진이 반영되어 등록되었습니다.');
       renderMonthList();
     } catch (e) { console.error(e); showToast('❌ 등록 실패: ' + (e.message || e), 'error'); }
     finally { btn.disabled = false; btn.textContent = o; }
@@ -640,6 +898,77 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally { btn.disabled = false; btn.textContent = o; }
   });
 
+  // 폼 기록 시트 → 일기 시트 가져오기
+  const _fiBtn = document.getElementById('form-import-btn');
+  if (_fiBtn) _fiBtn.addEventListener('click', async () => {
+    const ref = ((document.getElementById('form-import-url') || {}).value || '').trim();
+    if (!ref) { showToast('가져올 시트 URL을 붙여넣으세요.', 'error'); return; }
+    if (!Auth.isLoggedIn()) { showToast('먼저 로그인하세요.', 'error'); return; }
+    if (!confirm('시트의 기록을 일기로 가져옵니다.\n이미 일기가 있는 날짜는 건너뜁니다. 진행할까요?')) return;
+    const o = _fiBtn.textContent; _fiBtn.disabled = true; _fiBtn.textContent = '📋 가져오는 중...';
+    try {
+      const r = await Migrate.importFormSheet(ref);
+      showToast(`✅ 폼 기록 ${r.parsed}건 중 ${r.added}건 추가 (이미 있던 ${r.skipped}건 건너뜀)`);
+      renderMonthList();
+    } catch (e) { console.error(e); showToast('❌ 가져오기 실패: ' + (e.message || e), 'error'); }
+    finally { _fiBtn.disabled = false; _fiBtn.textContent = o; }
+  });
+
+  // 기간 일기 문체 일괄 변환 — 시작 전 JSON 자동 백업, 진행 중 재클릭 = 중단
+  const _rsBtn = document.getElementById('restyle-btn');
+  let _rsCancel = false;
+  // 기본 기간 = 올해 1/1 ~ 오늘
+  (() => {
+    const p = (n) => String(n).padStart(2, '0'); const now = new Date();
+    const s = document.getElementById('restyle-start'), e = document.getElementById('restyle-end');
+    if (s && !s.value) s.value = `${now.getFullYear()}-01-01`;
+    if (e && !e.value) e.value = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+  })();
+  if (_rsBtn) _rsBtn.addEventListener('click', async () => {
+    if (_rsBtn.dataset.busy === '1') { _rsCancel = true; _rsBtn.textContent = '🖋️ 중단 중...'; return; }
+    const start = (document.getElementById('restyle-start') || {}).value || '';
+    const end = (document.getElementById('restyle-end') || {}).value || '';
+    const styleKey = (document.getElementById('restyle-style') || {}).value || '';
+    const toneKey = (document.getElementById('restyle-tone') || {}).value || '';
+    const prog = document.getElementById('restyle-progress');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) { showToast('기간을 올바르게 선택하세요.', 'error'); return; }
+    if (!styleKey && !toneKey) { showToast('변환할 문체나 어투를 선택하세요.', 'error'); return; }
+    if (!Auth.isLoggedIn()) { showToast('먼저 로그인하세요.', 'error'); return; }
+    let entries;
+    try {
+      _entriesCache = await DiaryStore.loadEntries();
+      entries = _entriesCache.filter(en => en.date >= start && en.date <= end && (en.text || '').trim());
+    } catch (e) { showToast('일기 로드 실패: ' + (e.message || e), 'error'); return; }
+    if (!entries.length) { showToast('기간 내 일기가 없습니다.', 'error'); return; }
+    if (!confirm(`${start} ~ ${end} 일기 ${entries.length}편을 선택한 문체로 다시 써서 덮어씁니다.\n시작 전에 전체 JSON 백업이 자동 다운로드됩니다.\n진행할까요?`)) return;
+    try { exportDiariesJson(); } catch (_) {}
+    _rsCancel = false; _rsBtn.dataset.busy = '1';
+    const o = _rsBtn.textContent; _rsBtn.textContent = '🖋️ 변환 중… (다시 누르면 중단)';
+    let done = 0, failed = 0; const failedDates = [];
+    const oldestFirst = entries.slice().reverse(); // 과거 → 최신 순(중단해도 앞쪽부터 정리됨)
+    for (let i = 0; i < oldestFirst.length; i++) {
+      if (_rsCancel) break;
+      const en = oldestFirst[i];
+      if (prog) prog.textContent = `(${i + 1}/${oldestFirst.length}) ${en.date} 다시 쓰는 중...`;
+      try {
+        const out = await GeminiAPI.rewriteDiary(en.text, { styleKey, toneKey });
+        if (!out || !out.trim()) throw new Error('빈 응답');
+        await DiaryStore.updateText(en.date, out.trim());
+        en.text = out.trim(); // 캐시 동기화(목록 미리보기 갱신용)
+        done++;
+      } catch (err) {
+        failed++; failedDates.push(en.date);
+        console.warn('[Restyle]', en.date, err);
+        await new Promise(r => setTimeout(r, 1500)); // 쿼터 초과 등 연속 실패 과열 방지
+      }
+    }
+    _rsBtn.dataset.busy = ''; _rsBtn.textContent = o;
+    if (prog) prog.textContent = `${_rsCancel ? '⏹️ 중단' : '✅ 완료'} — 변환 ${done}편`
+      + (failed ? ` · 실패 ${failed} (${failedDates.slice(0, 6).join(', ')}${failedDates.length > 6 ? '…' : ''}) — 실패분은 기간을 좁혀 다시 실행하세요` : '');
+    showToast(`${_rsCancel ? '중단됨 — ' : ''}문체 변환 ${done}편 완료${failed ? `, 실패 ${failed}편` : ''}`);
+    renderMonthList();
+  });
+
   // 월별 일기 항목: 펼치기/접기 + 수정/삭제 — 이벤트 위임
   document.getElementById('month-diaries').addEventListener('click', async (e) => {
     const item = e.target.closest('.hist-item');
@@ -648,6 +977,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.closest('.hist-edit')) { e.stopPropagation(); _enterEditMode(item, date); return; }
     if (e.target.closest('.hist-cancel')) { e.stopPropagation(); _renderViewMode(item, date); return; }
     if (e.target.closest('.hist-save')) { e.stopPropagation(); await _saveEdit(item, date); return; }
+    if (e.target.closest('.hist-photo-change')) { e.stopPropagation(); _changePhoto(item, date); return; }
+    if (e.target.closest('.hist-rewrite')) { e.stopPropagation(); _rewriteInEdit(item); return; }
     if (e.target.closest('.hist-del')) { e.stopPropagation(); await _deleteDiary(item, date); return; }
     if (item.classList.contains('editing')) return;     // 편집 중엔 토글 안 함
     if (e.target.closest('.hist-actions')) return;       // 액션 영역은 토글 안 함

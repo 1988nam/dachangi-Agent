@@ -119,22 +119,18 @@ const DriveAPI = (() => {
       // HEIC 등 디코딩 불가 → 1차: 드라이브 서버 변환 썸네일(JPEG)로 재시도.
       //  원본 수 MB를 그대로 base64 전송하면 후보 여러 장일 때 Gemini 인라인 한도(20MB) 초과 위험.
       try {
-        const meta = await REST.driveGet(fileId, 'thumbnailLink');
-        if (meta && meta.thumbnailLink) {
-          const link = _resizeThumbLink(meta.thumbnailLink, maxDim);
-          const tRes = await _authedFetch(`/api/photo?url=${encodeURIComponent(link)}`, {});
-          if (tRes.ok) {
-            const tBlob = await tRes.blob();
-            if ((tBlob.type || '').indexOf('image/') === 0) {
-              const bmp = await createImageBitmap(tBlob);
-              const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
-              const w = Math.max(1, Math.round(bmp.width * scale));
-              const h = Math.max(1, Math.round(bmp.height * scale));
-              const canvas = document.createElement('canvas');
-              canvas.width = w; canvas.height = h;
-              canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
-              return { mime: 'image/jpeg', data: canvas.toDataURL('image/jpeg', 0.85).split(',')[1] };
-            }
+        const tRes = await _authedFetch(`/api/photo?fileId=${encodeURIComponent(fileId)}&sz=${maxDim}`, {});
+        if (tRes.ok) {
+          const tBlob = await tRes.blob();
+          if ((tBlob.type || '').indexOf('image/') === 0) {
+            const bmp = await createImageBitmap(tBlob);
+            const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+            const w = Math.max(1, Math.round(bmp.width * scale));
+            const h = Math.max(1, Math.round(bmp.height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+            return { mime: 'image/jpeg', data: canvas.toDataURL('image/jpeg', 0.85).split(',')[1] };
           }
         }
       } catch (_) {}
@@ -208,36 +204,44 @@ const DriveAPI = (() => {
     });
   }
 
-  // thumbnailLink의 크기 접미사(=s220 / =w..-h..)를 원하는 size로 교체
-  function _resizeThumbLink(link, size) {
-    if (/=s\d+(-c)?$/.test(link)) return link.replace(/=s\d+(-c)?$/, `=s${size}`);
-    if (/=w\d+-h\d+(-c)?$/.test(link)) return link.replace(/=w\d+-h\d+(-c)?$/, `=s${size}`);
-    return link + (link.indexOf('=') === -1 ? `=s${size}` : '');
+  // 같은 세션 안의 재요청(같은 날짜 재클릭, 프리페치 후 클릭)을 즉시 응답하는 메모리 캐시
+  const _thumbCache = new Map(); // `${fileId}|${size}` → dataUrl
+
+  // 프록시(fileId 모드) 경유 썸네일 1회 시도 — 성공 시 dataUrl, 실패 시 null(폴백은 호출부 책임).
+  //  메타 조회가 엣지로 옮겨가 브라우저 왕복이 1회이고, URL이 고정이라 서비스워커 캐시에 적중한다.
+  async function _fetchThumbViaProxy(fileId, size) {
+    const key = `${fileId}|${size}`;
+    if (_thumbCache.has(key)) return _thumbCache.get(key);
+    try {
+      const res = await _authedFetch(`/api/photo?fileId=${encodeURIComponent(fileId)}&sz=${size}`, {});
+      if (res.ok) {
+        const blob = await res.blob();
+        if ((blob.type || '').indexOf('image/') === 0) {
+          const dataUrl = await _blobToDataUrl(blob);
+          _thumbCache.set(key, dataUrl);
+          return dataUrl;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   // 썸네일 표시용 data URL.
-  //  1순위: 드라이브 서버 렌더 썸네일(thumbnailLink) → 포맷 무관(HEIC도 JPEG로 변환)·고화질. /api/photo 프록시 경유(CORS 회피).
+  //  1순위: /api/photo?fileId= 프록시 → 포맷 무관(HEIC도 JPEG로 변환)·고화질·캐시 가능.
   //  2순위(폴백): 원본 다운로드 후 캔버스 다운스케일(HEIC는 PC에서 디코딩 실패 가능).
   async function fetchThumbDataUrl(fileId, maxDim) {
     const size = maxDim || 1024;
-    try {
-      const meta = await REST.driveGet(fileId, 'thumbnailLink');
-      if (meta && meta.thumbnailLink) {
-        const link = _resizeThumbLink(meta.thumbnailLink, size);
-        const res = await fetch(`/api/photo?url=${encodeURIComponent(link)}`, {
-          headers: { Authorization: `Bearer ${Auth.getToken()}` },
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          if ((blob.type || '').indexOf('image/') === 0) return await _blobToDataUrl(blob);
-        }
-        console.warn('[Drive] thumbnailLink 응답 비정상, 원본 폴백');
-      }
-    } catch (e) { console.warn('[Drive] thumbnailLink 실패, 원본 폴백:', e.message || e); }
-    // 폴백: 원본 → 캔버스 다운스케일
+    const viaProxy = await _fetchThumbViaProxy(fileId, size);
+    if (viaProxy) return viaProxy;
+    console.warn('[Drive] 썸네일 프록시 실패, 원본 폴백');
     const { mime, data } = await fetchImageBase64(fileId, size);
-    return `data:${mime};base64,${data}`;
+    const dataUrl = `data:${mime};base64,${data}`;
+    _thumbCache.set(`${fileId}|${size}`, dataUrl);
+    return dataUrl;
   }
 
-  return { findMonthFolder, listImages, filterByDate, selectByResolution, fetchImageBase64, fetchThumbDataUrl, photoDateStr, uploadPhoto, ensurePhotoFolder };
+  // 백그라운드 프리페치 — 프록시만 시도하고 실패는 무시(원본 다운로드 폴백 없음: 수 MB 낭비 방지)
+  function prefetchThumb(fileId, maxDim) { return _fetchThumbViaProxy(fileId, maxDim || 1024); }
+
+  return { findMonthFolder, listImages, filterByDate, selectByResolution, fetchImageBase64, fetchThumbDataUrl, prefetchThumb, photoDateStr, uploadPhoto, ensurePhotoFolder };
 })();
