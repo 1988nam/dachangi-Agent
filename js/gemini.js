@@ -280,6 +280,54 @@ const GeminiAPI = (() => {
     return await _call([{ text: prompt }], { temperature: 0.5, maxOutputTokens: 8192 });
   }
 
+  // 제목 정리 — 따옴표·문장부호·이모지·줄바꿈 제거 후 10자(코드포인트 기준)로 컷.
+  function _clipTitle(s) {
+    let t = String(s == null ? '' : s)
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/["'`«»“”‘’\[\]{}()<>]/g, '')
+      .replace(/[.!?。…]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cp = Array.from(t); // 서러게이트(이모지 등) 안전 길이
+    if (cp.length > 10) t = cp.slice(0, 10).join('');
+    return t;
+  }
+
+  // 여러 일기 본문을 각각 10자 이내의 짧은 한국어 제목으로 압축 → [제목...] (입력 순서·개수 보존).
+  //  배치로 한 번에 처리해 호출 수를 줄인다(백필용). 실패 시 같은 길이의 빈 문자열 배열을 반환.
+  async function generateTitles(texts) {
+    const arr = (texts || []).map(t => (t || '').trim());
+    if (!arr.length) return [];
+    const prompt = [
+      `아래 ${arr.length}편의 일기를, 각각 그날을 한눈에 떠올릴 수 있는 아주 짧은 한국어 제목으로 압축해줘.`,
+      '【규칙】',
+      '- 각 제목은 공백 포함 10자 이내(필수). 핵심 사건·장소·인물 위주의 명사구로.',
+      '- 따옴표·마침표·이모지 없이 제목 텍스트만.',
+      '- 입력과 같은 순서로, 정확히 같은 개수(빠짐없이)만큼.',
+      '반드시 JSON만 출력: {"titles": ["제목1", "제목2", ...]}',
+      '',
+      ...arr.map((t, i) => `[일기 ${i + 1}]\n${t.slice(0, 1500)}`),
+    ].join('\n');
+    const text = await _call([{ text: prompt }], {
+      temperature: 0.4, maxOutputTokens: 1024,
+      responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 },
+    });
+    try {
+      const r = JSON.parse(text);
+      const titles = Array.isArray(r.titles) ? r.titles : [];
+      return arr.map((_, i) => _clipTitle(titles[i]));
+    } catch (_) {
+      return arr.map(() => '');
+    }
+  }
+
+  // 일기 한 편 → 10자 이내 제목. (배치 함수의 단건 래퍼)
+  async function generateTitle(text) {
+    if (!(text || '').trim()) return '';
+    const r = await generateTitles([text]);
+    return r[0] || '';
+  }
+
   // 오늘 사진 속 인물을 기존 얼굴과 대조 + 신규 구분. knownFaces:[{name?, mime, data}] (인덱스 0..N-1)
   //  → { results: [{match: <인덱스 or -1>, image?, box?}] }  (-1 = 신규, box=[ymin,xmin,ymax,xmax] 0~1000)
   async function analyzeFaces(images, knownFaces) {
@@ -309,5 +357,5 @@ const GeminiAPI = (() => {
     catch (_) { return { results: [] }; }
   }
 
-  return { rankPhotos, generateDiary, rewriteDiary, listAvailableModels, analyzeFaces };
+  return { rankPhotos, generateDiary, rewriteDiary, generateTitle, generateTitles, listAvailableModels, analyzeFaces };
 })();

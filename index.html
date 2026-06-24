@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="다챙이" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=48" />
+  <link rel="stylesheet" href="style.css?v=49" />
 </head>
 <body>
 
@@ -268,6 +268,11 @@
         <button type="button" id="restyle-btn" class="btn btn-ghost" style="width:auto; padding:9px 14px; margin-top:6px;">🖋️ 기간 일기 문체 일괄 변환</button>
         <div class="hint" id="restyle-progress" style="margin-top:4px;"></div>
       </div>
+      <div class="field">
+        <label>일기 제목 자동 생성 <span style="color:var(--text-muted); font-size:11px;">(제목 없는 기존 일기에 Gemini로 10자 제목 생성 → 사이드바 날짜 옆 표시)</span></label>
+        <button type="button" id="gen-titles-btn" class="btn btn-ghost" style="width:auto; padding:9px 14px;">🏷️ 제목 없는 일기에 제목 만들기</button>
+        <div class="hint" id="gen-titles-progress" style="margin-top:6px;"></div>
+      </div>
       <div class="field"><label>일기 작성 프롬프트(가이드)</label><textarea id="cfg-prompt" rows="5"></textarea></div>
       <div class="hint">읽기 권한(drive.readonly)으로 사진만 가져옵니다. 일기는 브라우저에 표시되며, 저장은 복사/다운로드로 합니다.</div>
 
@@ -343,17 +348,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=48"></script>
-  <script src="js/gapi_rest.js?v=48"></script>
-  <script src="js/drive.js?v=48"></script>
-  <script src="js/photos_picker.js?v=48"></script>
-  <script src="js/gemini.js?v=48"></script>
-  <script src="js/diary_store.js?v=48"></script>
-  <script src="js/people_store.js?v=48"></script>
-  <script src="js/migrate.js?v=48"></script>
-  <script src="js/diary.js?v=48"></script>
-  <script src="js/config_modal.js?v=48"></script>
-  <script src="js/main.js?v=48"></script>
+  <script src="js/auth.js?v=49"></script>
+  <script src="js/gapi_rest.js?v=49"></script>
+  <script src="js/drive.js?v=49"></script>
+  <script src="js/photos_picker.js?v=49"></script>
+  <script src="js/gemini.js?v=49"></script>
+  <script src="js/diary_store.js?v=49"></script>
+  <script src="js/people_store.js?v=49"></script>
+  <script src="js/migrate.js?v=49"></script>
+  <script src="js/diary.js?v=49"></script>
+  <script src="js/config_modal.js?v=49"></script>
+  <script src="js/main.js?v=49"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

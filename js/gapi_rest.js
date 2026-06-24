@@ -48,6 +48,8 @@ const REST = (() => {
     valuesGet: (id, range) => _req('GET', `${SHEETS}/spreadsheets/${id}/values/${encodeURIComponent(range)}`),
     valuesUpdate: (id, range, values) => _req('PUT', `${SHEETS}/spreadsheets/${id}/values/${encodeURIComponent(range)}?valueInputOption=RAW`, { values }),
     valuesAppend: (id, range, values) => _req('POST', `${SHEETS}/spreadsheets/${id}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { values }),
+    // 흩어진 여러 셀/범위를 한 번에 기록. data: [{ range, values:[[..]] }, ...]
+    valuesBatchUpdate: (id, data) => _req('POST', `${SHEETS}/spreadsheets/${id}/values:batchUpdate`, { valueInputOption: 'RAW', data }),
     batchUpdate: (id, requests) => _req('POST', `${SHEETS}/spreadsheets/${id}:batchUpdate`, { requests }),
     createSpreadsheet: (resource) => _req('POST', `${SHEETS}/spreadsheets`, resource),
   };

@@ -226,10 +226,15 @@ const DiaryAgent = (() => {
       if (!diary || diary.trim().toUpperCase() === 'SKIP') { _logFail('작성', `${dateStr}: AI가 일기 작성을 SKIP`); _done(s, 'AI가 작성 SKIP'); showToast('AI가 일기 작성을 SKIP 했습니다.', 'error'); restoreCard(); return; }
       _done(s, '일기 작성 완료');
 
+      // 사이드바 날짜 옆에 표시할 짧은 제목(10자 이내) 생성. 실패해도 일기 저장은 진행.
+      let title = '';
+      try { const ts = _step('🏷️ 제목 짓는 중...', true); title = await GeminiAPI.generateTitle(diary); _done(ts, title ? `제목: ${title}` : '제목 생략'); }
+      catch (e) { console.warn('[Diary] 제목 생성 실패:', e); }
+
       // 사용자가 대표 사진을 직접 고를 수 있도록 후보 전체를 보관(기본 대표 = Gemini 1순위)
       const allImages = candImages;
       const repDefaultIdx = Math.max(0, allImages.indexOf(topImages[0]));
-      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, _uploadCache: {}, bestId: '', bestThumb: '', style, keywords };
+      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, _uploadCache: {}, bestId: '', bestThumb: '', style, keywords, title };
 
       // 기본 대표 사진을 영구·고화질로 보관(포토=드라이브 업로드, 실패 시 시트 썸네일 폴백)
       let bestThumb = '';
@@ -266,6 +271,7 @@ const DiaryAgent = (() => {
           bestPhotoId: bestId || (topImages[0] || {}).id || '',
           photoIds: topImages.map(t => t.id).filter(Boolean),
           thumb: bestThumb || '',
+          title,
         });
         if (saveBtn) saveBtn.disabled = false;
         _done(s, '시트에 자동 저장 완료');
@@ -342,7 +348,7 @@ const DiaryAgent = (() => {
       const s = _step('✍️ 직접 작성 모드 — 사진 준비 완료', true);
       _done(s, '사진 준비 완료 — 아래에 일기를 직접 쓰고 💾로 저장하세요');
 
-      _last = { dateStr, diary: '', source, allImages, topImages, bestIndex: 0, _uploadCache: {}, bestId: (topImages[0] || {}).id || '', bestThumb: '', style: {}, keywords: '', type: 'manual' };
+      _last = { dateStr, diary: '', source, allImages, topImages, bestIndex: 0, _uploadCache: {}, bestId: (topImages[0] || {}).id || '', bestThumb: '', style: {}, keywords: '', type: 'manual', title: '' };
       _render(dateStr, allImages, 0, '');
       const ta = document.getElementById('diary-text'); if (ta) ta.focus();
     } catch (e) {
@@ -654,6 +660,9 @@ const DiaryAgent = (() => {
     const diary = await GeminiAPI.generateDiary(topImages, date, cfg.DIARY_PROMPT || '', people, style, keywords);
     if (!diary || diary.trim().toUpperCase() === 'SKIP') throw new Error('AI 작성 SKIP');
 
+    let title = '';
+    try { title = await GeminiAPI.generateTitle(diary); } catch (_) {} // 제목 실패는 일기 저장을 막지 않음
+
     let bestId = (topImages[0] || {}).id || '';
     let thumb = '';
     if (source === 'photos' && topImages[0]) {
@@ -668,6 +677,7 @@ const DiaryAgent = (() => {
       bestPhotoId: bestId || (topImages[0] || {}).id || '',
       photoIds: topImages.map(t => t.id).filter(Boolean),
       thumb,
+      title,
     });
   }
 
@@ -772,15 +782,24 @@ const DiaryAgent = (() => {
     } else {
       bestId = (rep || {}).id || '';
     }
+    // 제목: 본문이 바뀌었거나 아직 제목이 없을 때만 새로 생성(불필요한 Gemini 호출 절약).
+    //  수동 일기의 첫 저장(snap.diary='')도 여기서 본문 기준으로 제목을 만든다.
+    const curText = (text || '').trim();
+    let title = snap.title || '';
+    if (!title || curText !== (snap.diary || '').trim()) {
+      try { title = await GeminiAPI.generateTitle(curText); } catch (e) { console.warn('[Diary] finalize 제목 생성 실패:', e); }
+    }
     await DiaryStore.saveEntry({
       date: dateStr,
-      text: (text || '').trim(),
+      text: curText,
       bestPhotoId: bestId || (rep || {}).id || '',
       photoIds: topImages.map(t => t.id).filter(Boolean),
       thumb: thumb,
       type: snap.type || '', // 'manual'이면 '수동'으로 표기 저장
+      title,
     });
     snap.diary = text;
+    snap.title = title;
     snap.bestId = bestId;
     snap.bestThumb = thumb;
     // 수동 일기는 자동 저장이 없어 여기서 인물 감지를 1회 실행(자동 생성의 _processFaces와 동일 역할, 비차단)

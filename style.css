@@ -80,9 +80,13 @@ code { background: var(--bg-elevated); padding: 1px 6px; border-radius: 5px; fon
 .year-row { font-weight: 700; }
 .year-sub { display: none; flex-direction: column; gap: 2px; margin: 1px 0 3px 10px; padding-left: 6px; border-left: 1px solid var(--border); }
 .year-sub.open { display: flex; }
-.date-item { text-align: left; background: transparent; border: none; color: var(--text-muted); padding: 5px 10px; border-radius: 7px; font-size: 12.5px; cursor: pointer; }
+.date-item { text-align: left; background: transparent; border: none; color: var(--text-muted); padding: 5px 10px; border-radius: 7px; font-size: 12.5px; cursor: pointer; width: 100%; display: flex; align-items: baseline; gap: 6px; }
 .date-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
 .date-item.active { background: var(--bg-elevated); color: var(--text-primary); box-shadow: inset 2px 0 0 var(--accent); }
+.date-item .d-day { flex: none; }
+/* 날짜 옆 짧은 제목 — 흐리게, 한 줄 말줄임 */
+.date-item .d-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); opacity: 0.85; font-size: 11.5px; }
+.date-item:hover .d-title, .date-item.active .d-title { color: var(--text-secondary); }
 
 /* 달력 그리드 */
 .cal { margin-bottom: 16px; }

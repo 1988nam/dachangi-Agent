@@ -1,14 +1,15 @@
 /**
  * 다챙이 - 일기 저장소 (구글 시트를 DB로). 사진은 드라이브에 두고 ID만 저장.
- *   시트 탭 '일기' : [날짜, 일기, 대표사진ID, 사진ID목록, 생성시각, 대표썸네일(base64), 작성방식]
+ *   시트 탭 '일기' : [날짜, 일기, 대표사진ID, 사진ID목록, 생성시각, 대표썸네일(base64), 작성방식, 제목]
  *   대표썸네일: 구글 포토 소스는 baseUrl이 ~60분 만료되어 재참조 불가 →
  *     저장 시 작은 JPEG 썸네일을 시트에 직접 넣어 히스토리에서 그대로 표시(드라이브 불필요).
  *   작성방식(G열): '수동'=사용자가 직접 쓴 일기, 빈칸=AI(자동) 작성. 옛 행은 빈칸이라 자동으로 간주.
+ *   제목(H열): Gemini가 본문을 압축한 10자 이내 짧은 제목(사이드바 날짜 옆 표시). 빈칸이면 미생성.
  *   모든 시트 호출은 REST(OAuth Bearer) — API 키/디스커버리 불필요.
  */
 const DiaryStore = (() => {
   const TAB = '일기';
-  const HEADER = ['날짜', '일기', '대표사진ID', '사진ID목록', '생성시각', '대표썸네일', '작성방식'];
+  const HEADER = ['날짜', '일기', '대표사진ID', '사진ID목록', '생성시각', '대표썸네일', '작성방식', '제목'];
   const LS_ID = 'dachangi_diary_sheet_id';
   const MAX_THUMB = 48000; // 시트 셀 한도(5만자) 안전 여유
 
@@ -32,7 +33,7 @@ const DiaryStore = (() => {
     const titles = (meta.sheets || []).map(s => s.properties.title);
     if (!titles.includes(TAB)) {
       await REST.batchUpdate(sid, [{ addSheet: { properties: { title: TAB } } }]);
-      await REST.valuesUpdate(sid, `${TAB}!A1:G1`, [HEADER]);
+      await REST.valuesUpdate(sid, `${TAB}!A1:H1`, [HEADER]);
     }
   }
 
@@ -70,7 +71,7 @@ const DiaryStore = (() => {
     }
     const created = await REST.createSpreadsheet({ properties: { title: '다챙이 일기 DB' }, sheets: [{ properties: { title: TAB } }] });
     const sid = created.spreadsheetId;
-    await REST.valuesUpdate(sid, `${TAB}!A1:G1`, [HEADER]);
+    await REST.valuesUpdate(sid, `${TAB}!A1:H1`, [HEADER]);
     localStorage.setItem(LS_ID, sid);
     return sid;
   }
@@ -84,7 +85,7 @@ const DiaryStore = (() => {
   // 전체 일기 로드(최신순)
   async function loadEntries() {
     const sid = await ensureSheet();
-    const res = await REST.valuesGet(sid, `${TAB}!A2:G`);
+    const res = await REST.valuesGet(sid, `${TAB}!A2:H`);
     const rows = res.values || [];
     return rows.map((r, i) => ({
       rowIndex: i + 2,
@@ -95,6 +96,7 @@ const DiaryStore = (() => {
       createdAt: r[4] || '',
       thumb: r[5] || '',
       type: (r[6] === '수동') ? 'manual' : '', // 빈칸/옛 행은 자동(AI) 작성으로 간주
+      title: r[7] || '', // 빈칸이면 제목 미생성(백필 대상)
     })).filter(e => e.date).reverse();
   }
 
@@ -110,15 +112,16 @@ const DiaryStore = (() => {
       new Date().toLocaleString('ko-KR'),
       thumb,
       entry.type === 'manual' ? '수동' : '', // 자동(AI)은 빈칸
+      (entry.title || '').slice(0, 40),      // 제목(보통 10자 이내, 방어적으로 40자 컷)
     ];
     const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
     const dates = (res.values || []).map(r => r[0]);
     const idx = dates.indexOf(entry.date);
     if (idx !== -1) {
       const row = idx + 2;
-      await REST.valuesUpdate(sid, `${TAB}!A${row}:G${row}`, [rowVals]);
+      await REST.valuesUpdate(sid, `${TAB}!A${row}:H${row}`, [rowVals]);
     } else {
-      await REST.valuesAppend(sid, `${TAB}!A:G`, [rowVals]);
+      await REST.valuesAppend(sid, `${TAB}!A:H`, [rowVals]);
     }
     return { sheetId: sid };
   }
@@ -136,9 +139,9 @@ const DiaryStore = (() => {
     for (const e of sorted) {
       if (!e.date || existing.has(e.date) || seen.has(e.date)) { skipped++; continue; }
       seen.add(e.date);
-      rows.push([e.date, (e.text || '').slice(0, 45000), e.bestPhotoId || '', (e.photoIds || []).join(','), now, '', e.type === 'manual' ? '수동' : '']);
+      rows.push([e.date, (e.text || '').slice(0, 45000), e.bestPhotoId || '', (e.photoIds || []).join(','), now, '', e.type === 'manual' ? '수동' : '', (e.title || '').slice(0, 40)]);
     }
-    if (rows.length) await REST.valuesAppend(sid, `${TAB}!A:G`, rows);
+    if (rows.length) await REST.valuesAppend(sid, `${TAB}!A:H`, rows);
     return { added: rows.length, skipped };
   }
 
@@ -162,6 +165,33 @@ const DiaryStore = (() => {
     if (idx === -1) throw new Error('해당 날짜의 일기를 찾을 수 없습니다.');
     await REST.valuesUpdate(sid, `${TAB}!B${idx + 2}`, [[(text || '').slice(0, 45000)]]);
     return { row: idx + 2 };
+  }
+
+  // 제목만 수정(H열) — 본문/날짜/사진 유지. 백필 및 본문 수정 후 제목 갱신에 사용.
+  async function _updateTitleImpl(date, title) {
+    const sid = await ensureSheet();
+    const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
+    const idx = _findRow(res.values, date);
+    if (idx === -1) throw new Error('해당 날짜의 일기를 찾을 수 없습니다.');
+    await REST.valuesUpdate(sid, `${TAB}!H${idx + 2}`, [[(title || '').slice(0, 40)]]);
+    return { row: idx + 2 };
+  }
+
+  // 여러 일기의 제목을 한 번에 기록(백필용). items: [{date, title}] → 한 번의 values:batchUpdate.
+  //  날짜→행 매핑은 A2:A 1회 조회로 해결. 시트에 없는 날짜는 missing으로 집계.
+  async function _bulkUpdateTitlesImpl(items) {
+    const sid = await ensureSheet();
+    const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
+    const dates = (res.values || []).map(r => r[0]);
+    const data = [];
+    let missing = 0;
+    for (const it of (items || [])) {
+      const idx = dates.indexOf(it.date);
+      if (idx === -1) { missing++; continue; }
+      data.push({ range: `${TAB}!H${idx + 2}`, values: [[(it.title || '').slice(0, 40)]] });
+    }
+    if (data.length) await REST.valuesBatchUpdate(sid, data);
+    return { updated: data.length, missing };
   }
 
   // 날짜 + 본문 수정. 새 날짜가 다른 일기와 겹치면 거부.
@@ -212,6 +242,8 @@ const DiaryStore = (() => {
     saveEntry: (entry) => _serial(() => _saveEntryImpl(entry)),
     bulkAppend: (entries) => _serial(() => _bulkAppendImpl(entries)),
     updateText: (date, text) => _serial(() => _updateTextImpl(date, text)),
+    updateTitle: (date, title) => _serial(() => _updateTitleImpl(date, title)),
+    bulkUpdateTitles: (items) => _serial(() => _bulkUpdateTitlesImpl(items)),
     updateEntry: (oldDate, newDate, text) => _serial(() => _updateEntryImpl(oldDate, newDate, text)),
     updatePhoto: (date, bestPhotoId, thumb) => _serial(() => _updatePhotoImpl(date, bestPhotoId, thumb)),
     deleteByDate: (date) => _serial(() => _deleteByDateImpl(date)),

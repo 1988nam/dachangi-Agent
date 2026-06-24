@@ -344,17 +344,24 @@ async function _saveEdit(item, date) {
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중...'; }
   try {
     await DiaryStore.updateEntry(date, newDate, newText);
+    // 본문이 바뀌었으니 제목도 새로 생성(사이드바 날짜 옆 표시 갱신). 실패해도 본문 수정은 유지.
+    let newTitle;
+    try {
+      newTitle = await GeminiAPI.generateTitle(newText);
+      if (newTitle) await DiaryStore.updateTitle(newDate, newTitle);
+    } catch (te) { console.warn('[Diary] 수정 후 제목 생성 실패:', te); }
     if (newDate !== date) {
       // 결과 카드(_last)의 날짜도 동기화 — 안 하면 💾가 옛 날짜로 일기를 부활시킴
       if (typeof DiaryAgent !== 'undefined' && DiaryAgent.onEntryDateChanged) DiaryAgent.onEntryDateChanged(date, newDate);
       showToast('✅ 날짜·내용이 수정되었습니다.');
-      await renderMonthList();   // 날짜 변경 → 목록/달 그룹 재구성
+      await renderMonthList();   // 날짜 변경 → 목록/달 그룹 재구성(새 제목 반영)
       showDate(newDate);
     } else {
       const entry = _entriesCache.find(e => e.date === date);
-      if (entry) entry.text = newText;
+      if (entry) { entry.text = newText; if (newTitle) entry.title = newTitle; }
       _renderViewMode(item, date);
       showToast('✅ 일기가 수정되었습니다.');
+      if (newTitle) renderMonthList(); // 사이드바 트리의 제목 갱신(현재 보던 본문 카드는 그대로 유지)
     }
   } catch (e) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = o; }
@@ -577,7 +584,17 @@ async function renderMonthList() {
   renderStats();
   if (!_entriesCache.length) { listEl.innerHTML = '<div class="hint" style="padding:6px 4px;">저장한 일기 없음.<br/>일기를 만들고 💾 저장하세요.</div>'; return; }
   const byMonth = {};
-  _entriesCache.forEach(e => { const m = (e.date || '').slice(0, 7); if (!m) return; (byMonth[m] = byMonth[m] || []).push(e.date); });
+  const titleOf = {};
+  _entriesCache.forEach(e => {
+    const m = (e.date || '').slice(0, 7); if (!m) return;
+    (byMonth[m] = byMonth[m] || []).push(e.date);
+    titleOf[e.date] = e.title || '';
+  });
+  // 날짜 항목 버튼 — "15일 [제목]"처럼 날짜 옆에 짧은 제목을 흐리게 덧붙인다(없으면 날짜만).
+  const _dateItemHtml = (d, dayLabel) => {
+    const t = titleOf[d] || '';
+    return `<button class="date-item" data-date="${d}"><span class="d-day">${dayLabel}</span>${t ? `<span class="d-title">${_esc(t)}</span>` : ''}</button>`;
+  };
   const months = Object.keys(byMonth).sort().reverse();
   // 올해 월은 최상위에 그대로(1클릭 접근), 과거 연도는 「▸ yyyy년」 그룹으로 접어 스크롤을 줄인다.
   const curYear = String(new Date().getFullYear());
@@ -590,7 +607,7 @@ async function renderMonthList() {
     return `
       <div class="month-block">
         <button class="month-item month-row" data-month="${m}" title="${m}"><span><span class="month-caret">▸</span>${label}</span><span class="cnt">${dates.length}</span></button>
-        <div class="date-sub" data-month="${m}">${dates.map(d => `<button class="date-item" data-date="${d}">${parseInt(d.slice(8), 10)}일</button>`).join('')}</div>
+        <div class="date-sub" data-month="${m}">${dates.map(d => _dateItemHtml(d, `${parseInt(d.slice(8), 10)}일`)).join('')}</div>
       </div>`;
   };
   const YEAR_FLAT_MAX = 15; // 과거 연도 일기가 이 수 이하면 월 단계를 생략하고 날짜를 바로 노출(빈약한 해에 월 그룹은 무의미)
@@ -600,7 +617,7 @@ async function renderMonthList() {
       const total = ms.reduce((s, m) => s + byMonth[m].length, 0);
       const inner = total <= YEAR_FLAT_MAX
         ? ms.flatMap(m => byMonth[m].slice().sort().reverse())
-            .map(d => `<button class="date-item" data-date="${d}">${parseInt(d.slice(5, 7), 10)}월 ${parseInt(d.slice(8), 10)}일</button>`).join('')
+            .map(d => _dateItemHtml(d, `${parseInt(d.slice(5, 7), 10)}월 ${parseInt(d.slice(8), 10)}일`)).join('')
         : ms.map(m => monthBlock(m, true)).join('');
       return `
       <div class="year-block">
@@ -967,6 +984,44 @@ document.addEventListener('DOMContentLoaded', () => {
       + (failed ? ` · 실패 ${failed} (${failedDates.slice(0, 6).join(', ')}${failedDates.length > 6 ? '…' : ''}) — 실패분은 기간을 좁혀 다시 실행하세요` : '');
     showToast(`${_rsCancel ? '중단됨 — ' : ''}문체 변환 ${done}편 완료${failed ? `, 실패 ${failed}편` : ''}`);
     renderMonthList();
+  });
+
+  // 제목 없는 기존 일기에 Gemini로 10자 제목 일괄 생성(백필). 배치로 묶어 호출·쓰기 최소화.
+  const _genTitlesBtn = document.getElementById('gen-titles-btn');
+  if (_genTitlesBtn) _genTitlesBtn.addEventListener('click', async () => {
+    if (_genTitlesBtn.dataset.busy === '1') return;
+    if (!Auth.isLoggedIn()) { showToast('먼저 로그인하세요.', 'error'); return; }
+    const prog = document.getElementById('gen-titles-progress');
+    const setProg = (m) => { if (prog) prog.textContent = m; };
+    let entries;
+    try { _entriesCache = await DiaryStore.loadEntries(); entries = _entriesCache; }
+    catch (e) { showToast('일기 로드 실패: ' + (e.message || e), 'error'); return; }
+    // 제목이 비어 있고 본문이 있는 일기만 대상(이미 제목 있는 건 건너뜀)
+    const targets = entries.filter(e => !(e.title || '').trim() && (e.text || '').trim());
+    if (!targets.length) { setProg('제목 없는 일기가 없습니다 — 모든 일기에 이미 제목이 있어요.'); showToast('모든 일기에 이미 제목이 있습니다.'); return; }
+    if (!confirm(`제목이 없는 일기 ${targets.length}편에 Gemini로 10자 이내 제목을 생성합니다.\n(이미 제목이 있는 일기는 건드리지 않습니다)\n진행할까요?`)) { setProg(''); return; }
+    const o = _genTitlesBtn.textContent; _genTitlesBtn.dataset.busy = '1';
+    _genTitlesBtn.disabled = true; _genTitlesBtn.textContent = '🏷️ 생성 중...';
+    const BATCH = 10;
+    let done = 0, failed = 0;
+    try {
+      for (let i = 0; i < targets.length; i += BATCH) {
+        const chunk = targets.slice(i, i + BATCH);
+        setProg(`(${Math.min(i + BATCH, targets.length)}/${targets.length}) 제목 생성 중...`);
+        let titles = [];
+        try { titles = await GeminiAPI.generateTitles(chunk.map(e => e.text)); }
+        catch (err) { console.warn('[Titles] 배치 실패:', err); failed += chunk.length; await new Promise(r => setTimeout(r, 1500)); continue; }
+        const pairs = [];
+        chunk.forEach((e, j) => { const t = (titles[j] || '').trim(); if (t) { pairs.push({ date: e.date, title: t }); e.title = t; } else failed++; });
+        if (pairs.length) {
+          try { await DiaryStore.bulkUpdateTitles(pairs); done += pairs.length; }
+          catch (err) { console.warn('[Titles] 저장 실패:', err); failed += pairs.length; pairs.forEach(p => { const en = entries.find(x => x.date === p.date); if (en) en.title = ''; }); }
+        }
+      }
+      setProg(`✅ 완료 — 제목 ${done}편 생성${failed ? ` · 실패 ${failed}편(잠시 후 다시 실행하면 남은 것만 처리)` : ''}`);
+      showToast(`🏷️ 제목 ${done}편 생성 완료${failed ? `, 실패 ${failed}편` : ''}`);
+    } catch (e) { console.error(e); setProg('❌ ' + (e.message || e)); showToast('❌ 제목 생성 실패: ' + (e.message || e), 'error'); }
+    finally { _genTitlesBtn.dataset.busy = ''; _genTitlesBtn.disabled = false; _genTitlesBtn.textContent = o; renderMonthList(); }
   });
 
   // 월별 일기 항목: 펼치기/접기 + 수정/삭제 — 이벤트 위임
