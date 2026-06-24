@@ -1013,25 +1013,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!confirm(`제목이 없는 일기 ${targets.length}편에 Gemini로 10자 이내 제목을 생성합니다.\n(이미 제목이 있는 일기는 건드리지 않습니다)\n진행할까요?`)) { setProg(''); return; }
     const o = _genTitlesBtn.textContent; _genTitlesBtn.dataset.busy = '1';
     _genTitlesBtn.disabled = true; _genTitlesBtn.textContent = '🏷️ 생성 중...';
-    const BATCH = 10;
-    let done = 0, failed = 0;
+    const BATCH = 8;
+    let done = 0, failed = 0, firstErr = '', consecFail = 0;
+    const _emsg = (err) => (err && err.message) ? err.message : String(err);
     try {
       for (let i = 0; i < targets.length; i += BATCH) {
         const chunk = targets.slice(i, i + BATCH);
         setProg(`(${Math.min(i + BATCH, targets.length)}/${targets.length}) 제목 생성 중...`);
         let titles = [];
-        try { titles = await GeminiAPI.generateTitles(chunk.map(e => e.text)); }
-        catch (err) { console.warn('[Titles] 배치 실패:', err); failed += chunk.length; await new Promise(r => setTimeout(r, 1500)); continue; }
+        try { titles = await GeminiAPI.generateTitles(chunk.map(e => e.text)); consecFail = 0; }
+        catch (err) {
+          const msg = _emsg(err); console.warn('[Titles] 배치 실패:', err);
+          if (!firstErr) firstErr = msg;
+          failed += chunk.length; consecFail++;
+          // 첫 구간부터 연속 실패면 같은 원인으로 전부 실패할 가능성이 크다 → 즉시 멈추고 원인을 보여준다(쿼터 낭비 방지)
+          if (consecFail >= 2 && done === 0) { setProg(`❌ 연속 실패로 중단 — 원인: ${msg}`); break; }
+          await new Promise(r => setTimeout(r, 1200)); continue;
+        }
         const pairs = [];
         chunk.forEach((e, j) => { const t = (titles[j] || '').trim(); if (t) { pairs.push({ date: e.date, title: t }); e.title = t; } else failed++; });
         if (pairs.length) {
           try { await DiaryStore.bulkUpdateTitles(pairs); done += pairs.length; }
-          catch (err) { console.warn('[Titles] 저장 실패:', err); failed += pairs.length; pairs.forEach(p => { const en = entries.find(x => x.date === p.date); if (en) en.title = ''; }); }
+          catch (err) { const msg = _emsg(err); console.warn('[Titles] 저장 실패:', err); if (!firstErr) firstErr = msg; failed += pairs.length; pairs.forEach(p => { const en = entries.find(x => x.date === p.date); if (en) en.title = ''; }); }
         }
       }
-      setProg(`✅ 완료 — 제목 ${done}편 생성${failed ? ` · 실패 ${failed}편(잠시 후 다시 실행하면 남은 것만 처리)` : ''}`);
-      showToast(`🏷️ 제목 ${done}편 생성 완료${failed ? `, 실패 ${failed}편` : ''}`);
-    } catch (e) { console.error(e); setProg('❌ ' + (e.message || e)); showToast('❌ 제목 생성 실패: ' + (e.message || e), 'error'); }
+      if (done > 0) {
+        setProg(`✅ 완료 — 제목 ${done}편 생성${failed ? ` · 실패 ${failed}편(잠시 후 다시 실행하면 남은 것만 처리)` : ''}`);
+        showToast(`🏷️ 제목 ${done}편 생성 완료${failed ? `, 실패 ${failed}편` : ''}`);
+      } else {
+        setProg(`❌ 제목 생성 전부 실패 — 원인: ${firstErr || '알 수 없음'}`);
+        showToast(`❌ 제목 생성 실패: ${firstErr || '원인 미상'}`, 'error');
+      }
+    } catch (e) { console.error(e); setProg('❌ ' + _emsg(e)); showToast('❌ 제목 생성 실패: ' + _emsg(e), 'error'); }
     finally { _genTitlesBtn.dataset.busy = ''; _genTitlesBtn.disabled = false; _genTitlesBtn.textContent = o; renderMonthList(); }
   });
 

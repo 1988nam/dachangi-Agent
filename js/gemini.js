@@ -45,7 +45,12 @@ const GeminiAPI = (() => {
     // 1.5/gemma 등은 thinkingConfig 필드 자체를 거부한다. 그 외 모델엔 보내지 않는다.
     let gc = generationConfig;
     if (gc && gc.thinkingConfig && !/gemini-2\.5-flash/.test(model)) {
-      gc = { ...gc }; delete gc.thinkingConfig;
+      // 이 모델은 thinking을 끌 수 없다(2.5-pro 등). thinking이 작은 출력 토큰(랭킹 256·제목 1024 등)을
+      //  다 써버려 빈 응답(finishReason=MAX_TOKENS)이 되는 걸 막으려고, thinkingConfig는 빼되
+      //  출력 토큰 하한을 크게 확보한다(일기 생성이 8192로 정상 동작하는 모델 기준).
+      gc = { ...gc };
+      delete gc.thinkingConfig;
+      gc.maxOutputTokens = Math.max(gc.maxOutputTokens || 0, 8192);
     }
 
     let res = await _gFetch(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc }));
@@ -321,16 +326,17 @@ const GeminiAPI = (() => {
       ...arr.map((t, i) => `[일기 ${i + 1}]\n${t.slice(0, 1500)}`),
     ].join('\n');
     const text = await _call([{ text: prompt }], {
-      temperature: 0.4, maxOutputTokens: 1024,
+      temperature: 0.4, maxOutputTokens: 1024, // thinking 못 끄는 모델은 _call이 8192로 상향
       responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 },
     });
-    try {
-      const r = JSON.parse(text);
-      const titles = Array.isArray(r.titles) ? r.titles : [];
-      return arr.map((_, i) => _clipTitle(titles[i]));
-    } catch (_) {
-      return arr.map(() => '');
-    }
+    // 파싱 실패를 조용히 빈 제목으로 넘기면 '왜 실패했는지'를 알 수 없다 → 원인을 던져 호출 측이 표시하게.
+    //  일부 모델이 ```json 펜스로 감싸는 경우까지 견디도록 펜스를 벗긴 뒤 파싱.
+    const cleaned = String(text || '').replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    let r;
+    try { r = JSON.parse(cleaned); }
+    catch (e) { throw new Error(`제목 응답 파싱 실패: ${cleaned.replace(/\s+/g, ' ').slice(0, 120) || '(빈 응답 — 토큰 한도/모델 확인)'}`); }
+    const titles = Array.isArray(r) ? r : (Array.isArray(r && r.titles) ? r.titles : []);
+    return arr.map((_, i) => _clipTitle(titles[i]));
   }
 
   // 일기 한 편 → 10자 이내 제목. (배치 함수의 단건 래퍼)
