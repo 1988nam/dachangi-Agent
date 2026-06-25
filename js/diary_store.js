@@ -100,6 +100,15 @@ const DiaryStore = (() => {
     })).filter(e => e.date).reverse();
   }
 
+  // 정현체(직접 쓴 글) 학습 대상 판별 — 본인이 손으로 쓴 일기만 골라 문체·어투를 학습한다.
+  //  ① type==='manual' : 📝 직접 쓰기 기능으로 작성(시트 G열 '수동').
+  //  ② 2025-01-01 이전 옛 일기 : 수동 작성 기능 도입 전이라 type 표시가 없지만(빈칸),
+  //     2020~2024 일기는 전부 정현이 직접 쓴 글이므로 학습에 포함한다(사용자 확인).
+  //  2025년부터는 type==='manual'만 학습 대상 → 이후 AI 생성 일기가 섞여도 정현체 풀이 오염되지 않는다.
+  function isHandwritten(e) {
+    return !!e && (e.type === 'manual' || (!!e.date && e.date < '2025-01-01'));
+  }
+
   // 같은 날짜 있으면 업데이트, 없으면 추가
   async function _saveEntryImpl(entry) {
     const sid = await ensureSheet();
@@ -238,7 +247,7 @@ const DiaryStore = (() => {
 
   // 모든 쓰기는 직렬화 큐를 거친다 — 자동 저장 vs 💾 수동 저장 동시 실행 등으로 인한 중복 행 방지
   return {
-    ensureSheet, loadEntries, currentSheetId,
+    ensureSheet, loadEntries, currentSheetId, isHandwritten,
     saveEntry: (entry) => _serial(() => _saveEntryImpl(entry)),
     bulkAppend: (entries) => _serial(() => _bulkAppendImpl(entries)),
     updateText: (date, text) => _serial(() => _updateTextImpl(date, text)),

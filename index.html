@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="다챙이" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=51" />
+  <link rel="stylesheet" href="style.css?v=52" />
 </head>
 <body>
 
@@ -104,6 +104,7 @@
               <div class="field">
                 <label>어투 (말끝)</label>
                 <select id="tone-select">
+                  <option value="junghyun" selected>✍️ 정현체 (기본 · 직접 쓴 일기 어투 학습)</option>
                   <option value="">기본 (~했다)</option>
                   <option value="banmal">친근한 반말 (~했어)</option>
                   <option value="polite">부드러운 존댓말 (~했어요)</option>
@@ -115,7 +116,7 @@
                 <input type="text" id="style-custom" placeholder="예: 무라카미 하루키처럼 담담하고 건조하게" />
               </div>
             </div>
-            <div class="hint" style="margin-top:6px;">문체·어투·키워드를 바꾸고 <b>🔄 다시 생성</b>을 누르면, 사진을 다시 고르지 않고 같은 사진으로 새 일기를 써줍니다. <b>✍️ 정현체</b>는 <b>직접 쓴(📝 수동) 일기</b>의 문체·어투를 학습해 똑같이 써줘요(수동 일기가 없으면 기본 예시 사용). <b>📖 내 일기 문체</b>는 저장된 최근 일기 전반의 말투를 따라 씁니다.</div>
+            <div class="hint" style="margin-top:6px;">문체·어투·키워드를 바꾸고 <b>🔄 다시 생성</b>을 누르면, 사진을 다시 고르지 않고 같은 사진으로 새 일기를 써줍니다. <b>✍️ 정현체</b>는 <b>직접 쓴 일기(📝 수동 작성 + 2024년 이전 옛 일기)</b>의 문체·어투를 학습해 똑같이 써줘요. <b>문체·어투를 각각 정현체로 고를 수 있고</b>, 어느 쪽을 골라도 본인 말투를 따라 씁니다(학습할 일기가 없으면 기본 예시 사용). <b>📖 내 일기 문체</b>는 저장된 최근 일기 전반의 말투를 따라 씁니다.</div>
             <div class="hint" id="folder-hint" style="margin-top:10px;"></div>
             <div id="progress"></div>
           </div>
@@ -259,6 +260,7 @@
           </select>
           <select id="restyle-tone">
             <option value="plain" selected>간결한 기록체 (~했다)</option>
+            <option value="junghyun">✍️ 정현체 (직접 쓴 일기 어투 학습)</option>
             <option value="">어투 유지</option>
             <option value="banmal">친근한 반말 (~했어)</option>
             <option value="polite">부드러운 존댓말 (~했어요)</option>
@@ -348,17 +350,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=51"></script>
-  <script src="js/gapi_rest.js?v=51"></script>
-  <script src="js/drive.js?v=51"></script>
-  <script src="js/photos_picker.js?v=51"></script>
-  <script src="js/gemini.js?v=51"></script>
-  <script src="js/diary_store.js?v=51"></script>
-  <script src="js/people_store.js?v=51"></script>
-  <script src="js/migrate.js?v=51"></script>
-  <script src="js/diary.js?v=51"></script>
-  <script src="js/config_modal.js?v=51"></script>
-  <script src="js/main.js?v=51"></script>
+  <script src="js/auth.js?v=52"></script>
+  <script src="js/gapi_rest.js?v=52"></script>
+  <script src="js/drive.js?v=52"></script>
+  <script src="js/photos_picker.js?v=52"></script>
+  <script src="js/gemini.js?v=52"></script>
+  <script src="js/diary_store.js?v=52"></script>
+  <script src="js/people_store.js?v=52"></script>
+  <script src="js/migrate.js?v=52"></script>
+  <script src="js/diary.js?v=52"></script>
+  <script src="js/config_modal.js?v=52"></script>
+  <script src="js/main.js?v=52"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

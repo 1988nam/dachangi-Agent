@@ -8,7 +8,7 @@
  *    절대 가로채지 않는다(인증 토큰·만료 응답을 캐시하면 안 되므로).
  *  버전을 올리면 CACHE 이름이 바뀌어 옛 캐시가 자동 정리된다. (index.html ?v= 와 함께 올릴 것)
  */
-const CACHE = 'dachangi-v51';
+const CACHE = 'dachangi-v52';
 // 일기 사진 캐시 — 앱 셸과 달리 버전을 올려도 비우지 않는다(사진은 불변). 로그아웃 시 페이지측에서 삭제.
 const PHOTO_CACHE = 'dachangi-photos-v1';
 const PHOTO_CACHE_MAX = 400; // 기기 저장공간 보호: 개수 상한(오래된 것부터 베스트에포트 정리)

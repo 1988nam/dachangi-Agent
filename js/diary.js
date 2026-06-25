@@ -53,23 +53,24 @@ const DiaryAgent = (() => {
     return out;
   }
 
-  // 문체 옵션 해석 — 시트에 저장된 일기를 예시(few-shot)로 로드해 문체·어투를 학습시킨다.
-  //  · 'junghyun'(정현체): 사용자가 '직접 쓴' 수동 일기를 우선 학습 → 본인 문체·어투에 가장 근접.
-  //                        수동 일기가 없으면 빈 배열로 두고 gemini의 내장 정현체 예시로 폴백.
+  // 문체/어투 옵션 해석 — 시트에 저장된 일기를 예시(few-shot)로 로드해 문체·어투를 학습시킨다.
+  //  · 'junghyun'(정현체): 문체·어투 어느 쪽이든 정현체면, 사용자가 '직접 쓴' 일기(수동 + 2025 이전 옛 일기)를
+  //                        우선 학습 → 본인 문체·어투에 가장 근접. 학습 일기가 없으면 빈 배열 → gemini 내장 예시로 폴백.
   //  · 'mine'(내 일기 문체): 작성 방식 무관, 저장된 최근 일기 전반의 말투. 예시 없으면 기본 문체로 폴백.
   async function _resolveStyle(style, dateStr) {
     const st = Object.assign({}, style || {});
-    if (st.styleKey !== 'mine' && st.styleKey !== 'junghyun') return st;
+    const wantJung = st.styleKey === 'junghyun' || st.toneKey === 'junghyun';
+    if (st.styleKey !== 'mine' && !wantJung) return st;
     try {
       const entries = await DiaryStore.loadEntries(); // 최신순
-      if (st.styleKey === 'junghyun') {
-        st.samples = entries
-          .filter(e => e.type === 'manual' && e.date !== dateStr && (e.text || '').trim().length >= 30)
-          .slice(0, 3)
-          .map(e => e.text.slice(0, 1200));
-      } else {
+      if (st.styleKey === 'mine') {
         st.samples = entries
           .filter(e => e.date !== dateStr && (e.text || '').trim().length >= 50)
+          .slice(0, 3)
+          .map(e => e.text.slice(0, 1200));
+      } else { // 정현체(문체/어투) — 직접 쓴 일기만 학습
+        st.samples = entries
+          .filter(e => DiaryStore.isHandwritten(e) && e.date !== dateStr && (e.text || '').trim().length >= 30)
           .slice(0, 3)
           .map(e => e.text.slice(0, 1200));
       }

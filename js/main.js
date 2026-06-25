@@ -305,6 +305,7 @@ function _enterEditMode(item, date) {
           <label style="font-size:12px; color:var(--text-muted);">어투</label>
           <select class="hist-tone">
             <option value="">어투 유지</option>
+            <option value="junghyun">✍️ 정현체 (직접 쓴 일기 어투 학습)</option>
             <option value="plain">간결한 기록체 (~했다)</option>
             <option value="banmal">친근한 반말 (~했어)</option>
             <option value="polite">부드러운 존댓말 (~했어요)</option>
@@ -422,16 +423,16 @@ async function _rewriteInEdit(item) {
   if (!area.value.trim()) { showToast('다시 쓸 내용이 없습니다.', 'error'); return; }
   // 문체 예시 로드(단건 생성의 _resolveStyle과 동일 규칙):
   //  · 📖 내 일기 문체(mine): 저장된 다른 일기 전반.
-  //  · ✍️ 정현체(junghyun): 직접 쓴 수동 일기를 학습(없으면 gemini 내장 예시로 폴백).
+  //  · ✍️ 정현체(junghyun, 문체 또는 어투): 직접 쓴 일기(수동 + 2025 이전 옛 일기)를 학습(없으면 gemini 내장 예시로 폴백).
   let samples = [];
   if (styleKey === 'mine') {
     samples = _entriesCache
       .filter(en => en.date !== item.dataset.date && (en.text || '').trim().length >= 50)
       .slice(0, 3).map(en => en.text.slice(0, 1200));
     if (!samples.length) { showToast('참고할 다른 일기가 없어 내 문체를 적용할 수 없습니다.', 'error'); return; }
-  } else if (styleKey === 'junghyun') {
+  } else if (styleKey === 'junghyun' || toneKey === 'junghyun') {
     samples = _entriesCache
-      .filter(en => en.type === 'manual' && en.date !== item.dataset.date && (en.text || '').trim().length >= 30)
+      .filter(en => DiaryStore.isHandwritten(en) && en.date !== item.dataset.date && (en.text || '').trim().length >= 30)
       .slice(0, 3).map(en => en.text.slice(0, 1200));
   }
   const btn = item.querySelector('.hist-rewrite'); const o = btn ? btn.textContent : '';
@@ -696,7 +697,7 @@ function _restoreStylePref() {
   if (!p) return;
   const set = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
   set('style-select', p.styleKey || 'junghyun'); // 빈 값(예전 기본)은 정현체로 — 기본 문체 승격
-  set('tone-select', p.toneKey || '');
+  set('tone-select', p.toneKey || 'junghyun');    // 빈 값(예전 '기본 ~했다')은 정현체로 — 본인 어투 학습이 상위호환
   set('style-custom', p.customText || '');
   _syncCustomStyleField();
 }
@@ -967,9 +968,9 @@ document.addEventListener('DOMContentLoaded', () => {
     try { exportDiariesJson(); } catch (_) {}
     _rsCancel = false; _rsBtn.dataset.busy = '1';
     const o = _rsBtn.textContent; _rsBtn.textContent = '🖋️ 변환 중… (다시 누르면 중단)';
-    // 정현체면 직접 쓴 수동 일기를 학습 예시 풀로(각 변환 시 자기 자신은 제외). 없으면 gemini 내장 예시로 폴백.
-    const manualPool = styleKey === 'junghyun'
-      ? _entriesCache.filter(en => en.type === 'manual' && (en.text || '').trim().length >= 30)
+    // 정현체(문체 또는 어투)면 직접 쓴 일기(수동 + 2025 이전 옛 일기)를 학습 예시 풀로(각 변환 시 자기 자신은 제외). 없으면 gemini 내장 예시로 폴백.
+    const manualPool = (styleKey === 'junghyun' || toneKey === 'junghyun')
+      ? _entriesCache.filter(en => DiaryStore.isHandwritten(en) && (en.text || '').trim().length >= 30)
       : [];
     let done = 0, failed = 0; const failedDates = [];
     const oldestFirst = entries.slice().reverse(); // 과거 → 최신 순(중단해도 앞쪽부터 정리됨)

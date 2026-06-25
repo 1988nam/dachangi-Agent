@@ -175,7 +175,8 @@ const GeminiAPI = (() => {
     poetic: '시적이고 서정적인 글 — 비유와 이미지 중심으로, 산문시처럼 리듬감 있게.',
     kid: '어린이 그림일기 — 쉬운 단어와 순수한 시선으로, 솔직하고 천진하게.',
   };
-  // 정현체 few-shot 예시 — 사용자가 직접 쓴 일기에서 발췌. junghyun 문체 선택 시 [문체 참고]로 첨부.
+  // 정현체 few-shot 예시 — 사용자가 직접 쓴 일기에서 발췌. 문체/어투 어느 쪽이든 junghyun 선택 시 [문체 참고]로 첨부.
+  //  학습용 실제 일기(수동 + 2025 이전 옛 일기)가 부족할 때의 폴백.
   const JUNGHYUN_SAMPLES = [
     '셋째 처형네가 서울에 와서 같이 어딜갈까 고민하다가, 파주 DMZ를 가게 되었다.\n'
     + '예전에 혜영이랑도 갔었는데 그 때 못 탄 케이블카를 타고 넓게 펼쳐진 겨울 풍경을 감상했다.\n'
@@ -191,20 +192,22 @@ const GeminiAPI = (() => {
 
   // 문체 예시(few-shot) 해석 — [문체 참고]로 첨부할 예시 본문 배열을 고른다.
   //  · mine    : 호출 측이 넘긴 최근 일기(st.samples) 그대로.
-  //  · junghyun: 사용자가 '직접 쓴' 수동 일기(st.samples)를 우선 학습하고, 부족하면 내장 정현체
-  //              예시로 보충(최대 4편). 수동 일기가 없으면 기존처럼 내장 예시만 사용 → 폴백 안전.
+  //  · junghyun(문체 또는 어투): 사용자가 '직접 쓴' 일기(st.samples)를 우선 학습하고, 부족하면 내장 정현체
+  //              예시로 보충(최대 4편). 학습 일기가 없으면 내장 예시만 사용 → 폴백 안전.
   function _styleSamples(st) {
     if (!st) return [];
-    if (st.styleKey === 'mine' && Array.isArray(st.samples)) return st.samples.filter(Boolean);
-    if (st.styleKey === 'junghyun') {
-      const learned = Array.isArray(st.samples) ? st.samples.filter(Boolean) : [];
+    const learned = Array.isArray(st.samples) ? st.samples.filter(Boolean) : [];
+    if (st.styleKey === 'mine') return learned; // 'mine'은 내장 예시를 섞지 않고 넘겨받은 일기 그대로
+    if (st.styleKey === 'junghyun' || st.toneKey === 'junghyun') {
       return learned.concat(JUNGHYUN_SAMPLES).slice(0, 4);
     }
     return [];
   }
 
-  // 어투(말끝) 프리셋 — index.html #tone-select / 수정모드 .hist-tone 의 value와 1:1 대응
+  // 어투(말끝) 프리셋 — index.html #tone-select / #restyle-tone / 수정모드 .hist-tone 의 value와 1:1 대응
   const TONE_GUIDES = {
+    junghyun: '아래 [문체 참고]에 첨부된, 사용자가 직접 쓴 일기의 말끝·종결어미·문장 호흡을 그대로 따라가. '
+      + '특정 어미를 새로 강요하지 말고, 예시에서 드러나는 본인 말투(주로 ~했다 기록체에 가끔 ~인 것 같다·~할 예정이다로 마무리)를 자연스럽게 닮게 써.',
     plain: "간결한 기록체로, 문장을 '~했다', '~였다', '~인 것 같다'처럼 담백하게 끝맺어.",
     banmal: "친근한 반말 구어체로, 문장을 '~했어', '~더라', '~지 뭐야'처럼 친구에게 말하듯 끝맺어.",
     polite: "부드러운 존댓말로, 문장을 '~했어요', '~네요'처럼 끝맺어.",
