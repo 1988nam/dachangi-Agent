@@ -288,7 +288,9 @@ const DiaryAgent = (() => {
         _done(s, '시트에 자동 저장 완료');
         if (typeof renderMonthList === 'function') renderMonthList();
         showToast('✅ 일기 생성 + 자동 저장 완료!');
-        try { await _processFaces(topImages); } catch (_) {} // 인물 대조·감지(비차단)
+        // 인물 대조·감지(비차단). 처리 완료를 표시해, 이후 이 일기를 '수동'으로 바꿔 💾(finalize)해도 중복 카운트되지 않게 한다.
+        if (_last) _last._facesProcessed = true;
+        try { await _processFaces(topImages); } catch (_) {}
       } catch (e) {
         if (saveBtn) saveBtn.disabled = false;
         _logFail('저장', `${dateStr}: 자동 저장 실패 — ${e.message || e}`);
@@ -499,6 +501,20 @@ const DiaryAgent = (() => {
     if (ta) ta.placeholder = isManual ? '여기에 오늘의 일기를 직접 작성하세요...' : '일기가 여기에 표시됩니다.';
     const regen = document.getElementById('regenerate-btn');
     if (regen) regen.style.display = isManual ? 'none' : '';
+    // 수동 표시 체크박스도 현재 작성방식에 맞춰 동기화(직접 쓰기=항상 켜짐, 자동=꺼짐으로 시작)
+    const toggle = document.getElementById('manual-toggle');
+    if (toggle) toggle.checked = isManual;
+  }
+
+  // 결과 카드의 '수동 표시' 토글 — 자동 생성한 일기를 직접 고친 뒤 '수동(정현체 학습 대상)'으로
+  //  표시할 때 호출. 카드 레이아웃(다시 생성 버튼 등)은 그대로 두고 저장될 작성방식만 바꾼다.
+  function setManual(on) {
+    if (!_last) return;
+    _last.type = on ? 'manual' : '';
+    const badge = document.getElementById('manual-badge');
+    if (badge) badge.style.display = on ? '' : 'none';
+    const toggle = document.getElementById('manual-toggle');
+    if (toggle && toggle.checked !== on) toggle.checked = on;
   }
 
   function _escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
@@ -821,5 +837,5 @@ const DiaryAgent = (() => {
     return { ok: true };
   }
 
-  return { run, runManual, runBatch, getLast, setBestIndex, finalize, regenerateText, onEntryDateChanged, onEntryDeleted, failLog };
+  return { run, runManual, runBatch, getLast, setBestIndex, setManual, finalize, regenerateText, onEntryDateChanged, onEntryDeleted, failLog };
 })();

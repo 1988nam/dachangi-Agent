@@ -318,6 +318,10 @@ function _enterEditMode(item, date) {
         </div>
         <button class="btn btn-ghost hist-rewrite" style="padding:6px 12px;">🔄 AI로 다시 쓰기</button>
       </div>
+      <label class="hist-manual-wrap" style="display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px; cursor:pointer;" title="이 일기를 직접 고쳤다면 켜세요. 켜고 저장하면 '수동' 일기로 기록되어 ✍️ 정현체 문체·어투 학습에 포함됩니다.">
+        <input type="checkbox" class="hist-manual-toggle" ${entry && entry.type === 'manual' ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;" />
+        <span>✍️ <b>내가 고쳐 쓴(수동) 일기로 표시</b> <span style="color:var(--text-muted);">— 저장 시 ‘수동’ 딱지가 붙고 정현체 학습에 포함</span></span>
+      </label>
       <div class="hint" style="margin-top:6px;">문체/어투를 고르거나 키워드로 실제 맥락을 알려주고 다시 쓰기를 누르세요 — 키워드는 잘못 쓰인 사실(누구와·어디서)을 교정합니다. <b>💾 저장을 눌러야 시트에 반영</b>됩니다.</div>`;
     body.style.whiteSpace = 'normal';
   }
@@ -341,10 +345,21 @@ async function _saveEdit(item, date) {
   const dateEl = item.querySelector('.hist-edit-date');
   const newDate = dateEl ? dateEl.value.trim() : date;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) { showToast('날짜를 올바르게 선택하세요.', 'error'); return; }
+  // '수동 표시' 토글 — 현재 작성방식과 다르면 저장 후 G열을 갱신한다(같으면 불필요한 쓰기 생략).
+  const _entry = _entriesCache.find(e => e.date === date);
+  const _curManual = !!(_entry && _entry.type === 'manual');
+  const _manualEl = item.querySelector('.hist-manual-toggle');
+  const _wantManual = !!(_manualEl && _manualEl.checked);
   const saveBtn = item.querySelector('.hist-save'); const o = saveBtn ? saveBtn.textContent : '';
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중...'; }
   try {
     await DiaryStore.updateEntry(date, newDate, newText);
+    // 작성방식 변경(자동↔수동)을 시트 G열에 반영 — updateEntry로 날짜가 바뀌었을 수 있으니 newDate 기준.
+    let typeChanged = false;
+    if (_wantManual !== _curManual) {
+      try { await DiaryStore.updateType(newDate, _wantManual ? 'manual' : ''); typeChanged = true; }
+      catch (ce) { console.warn('[Diary] 작성방식(수동) 표시 변경 실패:', ce); showToast('수동 표시 저장 실패: ' + (ce.message || ce), 'error'); }
+    }
     // 본문이 바뀌었으니 제목도 새로 생성(사이드바 날짜 옆 표시 갱신). 실패해도 본문 수정은 유지.
     let newTitle;
     try {
@@ -355,12 +370,13 @@ async function _saveEdit(item, date) {
       // 결과 카드(_last)의 날짜도 동기화 — 안 하면 💾가 옛 날짜로 일기를 부활시킴
       if (typeof DiaryAgent !== 'undefined' && DiaryAgent.onEntryDateChanged) DiaryAgent.onEntryDateChanged(date, newDate);
       showToast('✅ 날짜·내용이 수정되었습니다.');
-      await renderMonthList();   // 날짜 변경 → 목록/달 그룹 재구성(새 제목 반영)
+      await renderMonthList();   // 날짜 변경 → 목록/달 그룹 재구성(새 제목·작성방식 반영)
       showDate(newDate);
     } else {
       const entry = _entriesCache.find(e => e.date === date);
-      if (entry) { entry.text = newText; if (newTitle) entry.title = newTitle; }
-      _renderViewMode(item, date);
+      if (entry) { entry.text = newText; if (newTitle) entry.title = newTitle; if (typeChanged) entry.type = _wantManual ? 'manual' : ''; }
+      if (typeChanged) { showDate(date); } // 수동 뱃지가 헤더에 있어 카드 전체를 다시 그려 반영
+      else { _renderViewMode(item, date); }
       showToast('✅ 일기가 수정되었습니다.');
       if (newTitle) renderMonthList(); // 사이드바 트리의 제목 갱신(현재 보던 본문 카드는 그대로 유지)
     }
@@ -886,6 +902,13 @@ document.addEventListener('DOMContentLoaded', () => {
     URL.revokeObjectURL(a.href);
   });
 
+  // 수동 표시 토글 — AI 초안을 고친 뒤 켜면 '수동(정현체 학습 대상)'으로 저장된다(레이아웃은 그대로).
+  const _manualToggle = document.getElementById('manual-toggle');
+  if (_manualToggle) _manualToggle.addEventListener('change', () => {
+    if (!DiaryAgent.getLast()) { _manualToggle.checked = false; showToast('먼저 일기를 생성하세요.', 'error'); return; }
+    DiaryAgent.setManual(_manualToggle.checked);
+  });
+
   // 시트에 저장
   document.getElementById('save-diary-btn').addEventListener('click', async () => {
     const last = DiaryAgent.getLast();
@@ -896,7 +919,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = true; btn.textContent = '💾 등록 중...';
     try {
       await DiaryAgent.finalize(text); // 수정 텍스트 + 선택한 대표 사진 반영(같은 날짜 덮어쓰기)
-      showToast(last.type === 'manual' ? '✅ 직접 쓴 일기가 저장되었습니다.' : '✅ 수정·대표 사진이 반영되어 등록되었습니다.');
+      showToast(last.type === 'manual' ? '✅ 수동(정현체 학습 포함)으로 저장되었습니다.' : '✅ 수정·대표 사진이 반영되어 등록되었습니다.');
       renderMonthList();
     } catch (e) { console.error(e); showToast('❌ 등록 실패: ' + (e.message || e), 'error'); }
     finally { btn.disabled = false; btn.textContent = o; }

@@ -219,6 +219,17 @@ const DiaryStore = (() => {
     return { row, date: newDate };
   }
 
+  // 작성방식(G열)만 수정 — 본문/날짜/사진 유지. AI가 쓴 일기를 사용자가 고친 뒤
+  //  '수동(정현체 학습 대상)'으로 표시하거나, 반대로 표시를 해제할 때 사용.
+  async function _updateTypeImpl(date, type) {
+    const sid = await ensureSheet();
+    const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
+    const idx = _findRow(res.values, date);
+    if (idx === -1) throw new Error('해당 날짜의 일기를 찾을 수 없습니다.');
+    await REST.valuesUpdate(sid, `${TAB}!G${idx + 2}`, [[type === 'manual' ? '수동' : '']]);
+    return { row: idx + 2 };
+  }
+
   // 대표 사진만 교체(본문/날짜 유지). C=bestPhotoId, F=썸네일 폴백
   async function _updatePhotoImpl(date, bestPhotoId, thumb) {
     const sid = await ensureSheet();
@@ -254,6 +265,7 @@ const DiaryStore = (() => {
     updateTitle: (date, title) => _serial(() => _updateTitleImpl(date, title)),
     bulkUpdateTitles: (items) => _serial(() => _bulkUpdateTitlesImpl(items)),
     updateEntry: (oldDate, newDate, text) => _serial(() => _updateEntryImpl(oldDate, newDate, text)),
+    updateType: (date, type) => _serial(() => _updateTypeImpl(date, type)),
     updatePhoto: (date, bestPhotoId, thumb) => _serial(() => _updatePhotoImpl(date, bestPhotoId, thumb)),
     deleteByDate: (date) => _serial(() => _deleteByDateImpl(date)),
   };
