@@ -276,11 +276,14 @@ const DiaryAgent = (() => {
       const saveBtn = document.getElementById('save-diary-btn');
       if (saveBtn) saveBtn.disabled = true;
       try {
+        // 대표(topImages[0]) 외 선택 사진도 영구 보관 → photoIds 에 함께 저장(저장된 일기에서 1~3장 표시)
+        const _repId = bestId || (topImages[0] || {}).id || '';
+        const _extraIds = await _persistExtras(source, dateStr, topImages.slice(1), _last._uploadCache, allImages);
         await DiaryStore.saveEntry({
           date: dateStr,
           text: diary.trim(),
-          bestPhotoId: bestId || (topImages[0] || {}).id || '',
-          photoIds: topImages.map(t => t.id).filter(Boolean),
+          bestPhotoId: _repId,
+          photoIds: _mergePhotoIds(_repId, _extraIds, topImages.length),
           thumb: bestThumb || '',
           title,
         });
@@ -410,6 +413,42 @@ const DiaryAgent = (() => {
       image.onerror = () => resolve('');
       image.src = `data:${img.mime};base64,${img.data}`;
     });
+  }
+
+  // 대표 외 '선택 사진'들도 영구 보관 → 드라이브 fileId 배열 반환.
+  //  · 포토 소스: 각 사진을 드라이브에 업로드(대표보다 작은 1280px). cache가 있으면(=자동저장·💾 재저장)
+  //    allImages 인덱스 기준으로 이미 올린 건 재사용해 중복 업로드를 막는다.
+  //  · 드라이브 소스: 원본 파일ID가 영구이므로 그대로 사용(업로드 없음).
+  //  실패한 사진은 조용히 건너뛴다(대표 1장은 이 함수와 무관하게 이미 저장됨).
+  async function _persistExtras(source, dateStr, extras, cache, allImages) {
+    const ids = [];
+    for (let i = 0; i < (extras || []).length; i++) {
+      const img = extras[i];
+      if (!img) continue;
+      let id = '';
+      if (source === 'photos') {
+        const idx = (cache && allImages) ? allImages.indexOf(img) : -1;
+        if (idx >= 0 && cache[idx]) { id = cache[idx]; }
+        else {
+          try {
+            const hi = img.baseUrl ? await PhotosPicker.fetchImageBase64(img.baseUrl, 1280) : { mime: img.mime, data: img.data };
+            id = await DriveAPI.uploadPhoto(`${dateStr} (${i + 2}).jpg`, hi.data, hi.mime);
+            if (idx >= 0) cache[idx] = id;
+          } catch (e) { console.warn('[Diary] 추가 사진 저장 실패:', e); }
+        }
+      } else {
+        id = img.id || '';
+      }
+      if (id) ids.push(id);
+    }
+    return ids;
+  }
+
+  // [대표ID, ...추가ID] 를 중복 제거하고 최대 maxN장으로 — 저장할 photoIds 구성
+  function _mergePhotoIds(repId, extraIds, maxN) {
+    const out = [];
+    [repId].concat(extraIds || []).forEach(v => { if (v && out.indexOf(v) === -1) out.push(v); });
+    return out.slice(0, Math.max(1, maxN || 3));
   }
 
   // 경계상자(box: [ymin,xmin,ymax,xmax] 0~1000)로 얼굴 부분을 잘라 작은 JPEG base64로
@@ -699,10 +738,13 @@ const DiaryAgent = (() => {
         bestId = await DriveAPI.uploadPhoto(`${date} 대표.jpg`, hi.data, hi.mime);
       } catch (e) { bestId = ''; try { thumb = await _makeThumb(rep, 512); } catch (_) {} }
     }
+    // 대표 외 선택 사진도 영구 보관(배치는 캐시 없음 — 각 날짜 1회 생성이라 그대로 업로드)
+    const _repIdB = bestId || (topImages[0] || {}).id || '';
+    const _extraIdsB = await _persistExtras(source, date, topImages.slice(1), null, null);
     await DiaryStore.saveEntry({
       date, text: diary.trim(),
-      bestPhotoId: bestId || (topImages[0] || {}).id || '',
-      photoIds: topImages.map(t => t.id).filter(Boolean),
+      bestPhotoId: _repIdB,
+      photoIds: _mergePhotoIds(_repIdB, _extraIdsB, topImages.length),
       thumb,
       title,
     });
@@ -816,11 +858,15 @@ const DiaryAgent = (() => {
     if (!title || curText !== (snap.diary || '').trim()) {
       try { title = await GeminiAPI.generateTitle(curText); } catch (e) { console.warn('[Diary] finalize 제목 생성 실패:', e); }
     }
+    // 대표(rep) 외 선택 사진도 영구 보관 → photoIds 구성(대표 먼저). 이미 올린 건 _uploadCache 재사용.
+    const _repIdF = bestId || (rep || {}).id || '';
+    const _extrasF = (topImages || []).filter(t => t && t !== rep);
+    const _extraIdsF = await _persistExtras(source, dateStr, _extrasF, snap._uploadCache, allImages);
     await DiaryStore.saveEntry({
       date: dateStr,
       text: curText,
-      bestPhotoId: bestId || (rep || {}).id || '',
-      photoIds: topImages.map(t => t.id).filter(Boolean),
+      bestPhotoId: _repIdF,
+      photoIds: _mergePhotoIds(_repIdF, _extraIdsF, (topImages || []).length),
       thumb: thumb,
       type: snap.type || '', // 'manual'이면 '수동'으로 표기 저장
       title,

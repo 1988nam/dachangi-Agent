@@ -468,10 +468,7 @@ function _entryCardsHtml(entries) {
   if (!entries.length) return '<div class="hint">일기가 없습니다.</div>';
   return entries.map(e => {
     const preview = _esc(e.text).slice(0, 140);
-    // 시트에 저장된 썸네일(포토 소스)은 바로 렌더, 없으면 드라이브 ID로 펼칠 때 lazy 로드
-    const photoHtml = e.thumb
-      ? `<img src="data:image/jpeg;base64,${e.thumb}" style="max-width:480px; width:100%; border-radius:10px; border:1px solid var(--border);" />`
-      : '';
+    // 사진(1~3장)은 펼칠 때 갤러리로 lazy 로드(_toggleEntry → _renderEntryGallery)
     const manualTag = e.type === 'manual' ? ' <span class="manual-tag">✍️ 수동</span>' : '';
     return `
       <div class="diary-entry hist-item" data-date="${_esc(e.date)}" data-best="${_esc(e.bestPhotoId)}" data-expanded="0">
@@ -481,7 +478,7 @@ function _entryCardsHtml(entries) {
         </div>
         <div class="hist-preview" style="color:var(--text-secondary); font-size:13px; margin-top:6px;">${preview}${e.text.length > 140 ? '…' : ''}</div>
         <div class="hist-full" style="display:none; margin-top:10px;">
-          <div class="hist-photo" style="margin-bottom:10px;"${e.thumb ? ' data-loaded="1"' : ''}>${photoHtml}</div>
+          <div class="hist-photo" style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:8px;"></div>
           <div class="hist-body" style="white-space:pre-wrap; line-height:1.7; font-size:14px;">${_esc(e.text)}</div>
           <div class="hist-actions" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn btn-ghost hist-edit" style="padding:6px 12px;">✏️ 수정</button>
@@ -570,15 +567,40 @@ async function _toggleEntry(item) {
   item.querySelector('.hist-full').style.display = expanded ? 'none' : '';
   item.querySelector('.hist-arrow').textContent = expanded ? '▼' : '▲';
   if (!expanded) {
-    const best = item.getAttribute('data-best');
     const ph = item.querySelector('.hist-photo');
-    if (best && ph && !ph.dataset.loaded) {
+    if (ph && !ph.dataset.loaded) {
       ph.dataset.loaded = '1';
-      ph.innerHTML = '<span class="hint">🖼️ 사진 불러오는 중...</span>';
-      try { const url = await DriveAPI.fetchThumbDataUrl(best, 1280); ph.innerHTML = `<img src="${url}" style="max-width:480px; width:100%; border-radius:10px; border:1px solid var(--border);" />`; }
-      catch (_) { ph.innerHTML = '<span class="hint">사진을 불러오지 못했습니다(삭제/권한).</span>'; }
+      const date = item.getAttribute('data-date');
+      const entry = (_entriesCache || []).find(e => e.date === date) || { bestPhotoId: item.getAttribute('data-best') };
+      await _renderEntryGallery(ph, entry);
     }
   }
+}
+
+// 저장된 일기의 사진 갤러리(대표 먼저, 최대 3장). 못 불러오는 사진(삭제/만료)은 조용히 건너뜀.
+async function _renderEntryGallery(container, entry) {
+  container.innerHTML = '<span class="hint">🖼️ 사진 불러오는 중...</span>';
+  const urls = [];
+  // 대표가 base64 썸네일로만 저장된 경우(드라이브 업로드 실패분): 대표를 맨 앞에 먼저 표시
+  if (entry.thumb) urls.push(`data:image/jpeg;base64,${entry.thumb}`);
+  // 표시 대상 ID = [대표, ...photoIds] 중복 제거. 대표를 항상 먼저 시도해야
+  //  옛 포토 일기(photoIds엔 만료 ID, 대표는 드라이브 영구)에서 대표 1장이라도 확실히 나온다.
+  const ids = [];
+  [entry.bestPhotoId].concat(entry.photoIds || []).forEach(id => { if (id && ids.indexOf(id) === -1) ids.push(id); });
+  for (const id of ids) {
+    if (urls.length >= 3) break;
+    if (entry.thumb && id === entry.bestPhotoId) continue; // base64로 이미 넣은 대표는 중복 방지
+    if (typeof DriveAPI === 'undefined') break;
+    try { urls.push(await DriveAPI.fetchThumbDataUrl(id, 1280)); } catch (_) {}
+  }
+  if (!urls.length) { container.innerHTML = '<span class="hint">사진을 불러오지 못했습니다(삭제/권한/만료).</span>'; return; }
+  // 대표(첫 장)는 크게, 나머지는 2장씩 나란히
+  container.innerHTML = urls.map((u, i) => {
+    const style = (urls.length > 1 && i > 0)
+      ? 'width:calc(50% - 4px); max-height:240px; object-fit:cover;'
+      : 'width:100%; max-width:480px;';
+    return `<img src="${u}" style="${style} border-radius:10px; border:1px solid var(--border);" />`;
+  }).join('');
 }
 
 // 키워드 검색 (본문/날짜)
