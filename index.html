@@ -12,7 +12,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="다챙이" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="style.css?v=53" />
+  <!-- 앱 브랜딩(제목·홈화면 이름). 아이별 배포 시 deploy.sh 가 이 파일을 교체 -->
+  <script src="js/brand.js?v=54"></script>
+  <link rel="stylesheet" href="style.css?v=54" />
 </head>
 <body>
 
@@ -20,7 +22,7 @@
   <div id="login-screen">
     <div class="login-card">
       <div class="logo">📔</div>
-      <h1>다챙이</h1>
+      <h1 data-brand-name>다챙이</h1>
       <p>구글 드라이브의 사진을 AI가 분석해<br/>하루 일기를 자동으로 써주는 에이전트</p>
       <div style="margin-top: 22px; display:flex; flex-direction:column; gap:10px;">
         <button id="login-btn" class="btn btn-block">🔐 구글로 로그인</button>
@@ -36,11 +38,11 @@
       <!-- 모바일 상단바 (햄버거) -->
       <div class="mobile-topbar">
         <button id="sidebar-toggle" class="icon-btn" aria-label="메뉴 열기">☰</button>
-        <span class="mobile-title">📔 다챙이</span>
+        <span class="mobile-title">📔 <span data-brand-name>다챙이</span></span>
       </div>
       <!-- 왼쪽 사이드바 -->
       <aside class="sidebar">
-        <div class="side-logo">📔 다챙이 <span class="badge">AI 일기</span><button id="sidebar-close" class="icon-btn sidebar-close" aria-label="메뉴 닫기">✕</button></div>
+        <div class="side-logo">📔 <span data-brand-name>다챙이</span> <span class="badge">AI 일기</span><button id="sidebar-close" class="icon-btn sidebar-close" aria-label="메뉴 닫기">✕</button></div>
         <nav class="side-nav">
           <button class="side-item active" data-view="write">✍️ 새 일기 쓰기</button>
           <button class="side-item" id="side-people"><span>👥 인물 관리</span><span class="side-badge" id="people-badge" style="display:none;"></span></button>
@@ -231,7 +233,7 @@
         <div class="hint">'구글 포토'는 드라이브 자동업로드 없이 포토 창에서 바로 고릅니다. 단, 포토 사진은 만료 주소라서 <b>저장된 일기 히스토리의 썸네일은 보관되지 않습니다</b>(텍스트는 영구 보관). '드라이브'는 기존 방식(yyyy-MM 폴더의 그 날짜 사진 자동수집).</div>
       </div>
       <div class="field"><label>사진 메인 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(드라이브 소스일 때만)</span> (안에 <code>yyyy-MM</code> 월별 폴더가 있는 폴더)</label><input type="text" id="cfg-main-folder" placeholder="드라이브 폴더 ID" /></div>
-      <div class="field"><label>일기 저장 시트 ID <span style="color:var(--text-muted); font-size:11px;">(비우면 자동 생성)</span></label><input type="text" id="cfg-diary-sheet" placeholder="비우면 '다챙이 일기 DB' 시트를 자동 생성" /></div>
+      <div class="field"><label>일기 저장 시트 ID <span style="color:var(--text-muted); font-size:11px;">(비우면 자동 생성)</span></label><input type="text" id="cfg-diary-sheet" placeholder="비우면 '(앱이름) 일기 DB' 시트를 자동 생성" /></div>
       <div class="field"><label>기존 일기 문서 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(이관용)</span></label><input type="text" id="cfg-diary-folder" placeholder="GAS 일기 문서(yyyy-MM 일기)들이 있는 드라이브 폴더 ID" /></div>
       <div class="field"><label>대표 사진 폴더 ID <span style="color:var(--text-muted); font-size:11px;">(선택, 이관 시 사진 매칭)</span></label><input type="text" id="cfg-best-folder" placeholder="대표 사진들이 저장된 폴더 ID" /></div>
       <div class="field">
@@ -354,17 +356,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=53"></script>
-  <script src="js/gapi_rest.js?v=53"></script>
-  <script src="js/drive.js?v=53"></script>
-  <script src="js/photos_picker.js?v=53"></script>
-  <script src="js/gemini.js?v=53"></script>
-  <script src="js/diary_store.js?v=53"></script>
-  <script src="js/people_store.js?v=53"></script>
-  <script src="js/migrate.js?v=53"></script>
-  <script src="js/diary.js?v=53"></script>
-  <script src="js/config_modal.js?v=53"></script>
-  <script src="js/main.js?v=53"></script>
+  <script src="js/auth.js?v=54"></script>
+  <script src="js/gapi_rest.js?v=54"></script>
+  <script src="js/drive.js?v=54"></script>
+  <script src="js/photos_picker.js?v=54"></script>
+  <script src="js/gemini.js?v=54"></script>
+  <script src="js/diary_store.js?v=54"></script>
+  <script src="js/people_store.js?v=54"></script>
+  <script src="js/migrate.js?v=54"></script>
+  <script src="js/diary.js?v=54"></script>
+  <script src="js/config_modal.js?v=54"></script>
+  <script src="js/main.js?v=54"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>

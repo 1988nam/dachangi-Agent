@@ -80,9 +80,10 @@ function _sortedEntries() {
 function exportDiariesMarkdown() {
   const entries = _sortedEntries();
   if (!entries.length) { showToast('내보낼 일기가 없습니다.', 'error'); return; }
-  let md = `# 다챙이 일기 (${entries.length}편)\n\n`;
+  const _brandTitle = (window.APP_BRAND && window.APP_BRAND.exportTitle) || '다챙이 일기';
+  let md = `# ${_brandTitle} (${entries.length}편)\n\n`;
   entries.forEach(e => { md += `## ${e.date}\n\n${e.text || ''}\n\n---\n\n`; });
-  _downloadFile(`다챙이 일기 ${_exportStamp()}.md`, md, 'text/markdown');
+  _downloadFile(`${_brandTitle} ${_exportStamp()}.md`, md, 'text/markdown');
   showToast(`📝 ${entries.length}편을 Markdown으로 내보냈습니다.`);
 }
 function exportDiariesJson() {
@@ -90,8 +91,9 @@ function exportDiariesJson() {
     date: e.date, text: e.text, bestPhotoId: e.bestPhotoId || '', photoIds: e.photoIds || [], createdAt: e.createdAt || '',
   }));
   if (!entries.length) { showToast('내보낼 일기가 없습니다.', 'error'); return; }
+  const _brandTitle = (window.APP_BRAND && window.APP_BRAND.exportTitle) || '다챙이 일기';
   const payload = { app: 'dachangi', exportedAt: new Date().toISOString(), count: entries.length, entries };
-  _downloadFile(`다챙이 일기 ${_exportStamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  _downloadFile(`${_brandTitle} ${_exportStamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
   showToast(`🧩 ${entries.length}편을 JSON으로 내보냈습니다.`);
 }
 

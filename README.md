@@ -24,11 +24,27 @@
 
 권한(SCOPES)은 `drive.readonly`(사진 읽기)만 사용. 일기는 브라우저에 표시되며 저장은 복사/`.txt` 다운로드.
 
+## 브랜딩 (한 소스, 아이별 앱)
+- 앱 이름·홈화면 이름·시트명·사진 폴더명·백업 파일명·아기 호칭은 모두 [`js/brand.js`](js/brand.js)의 `CHILD.name` / `CHILD.nameCall` 에서 파생된다. **소스를 복제하지 않고** 이 파일만 갈아끼워 아이별 앱을 만든다.
+- 아이별 오버레이는 `brand/<child>/` 에 둔다(예: [`brand/siu/`](brand/siu/) = 시우챙이). 각 폴더에 `brand.js`(필수)와 `manifest.webmanifest`(홈화면 이름), 필요하면 `icons/` 를 둔다.
+- localStorage/캐시 키(`dachangi_*`)와 전역명(`DACHANGI_CONFIG`)은 브랜드와 무관한 **내부 식별자**다. 아이별 앱은 서로 다른 도메인에 배포되므로 키가 같아도 데이터가 섞이지 않는다.
+
 ## 배포 (Cloudflare Pages, 정적)
+```
+./deploy.sh            # 다챙이(기본)
+./deploy.sh siu        # 시우챙이 (Pages 프로젝트 'siuchangi')
+```
+`deploy.sh` 는 `.deploy/` 에 소스를 복사하고 `brand/<child>/` 를 덮어써 배포한다(작업 트리 무변경). 수동 배포는 아래와 동일:
 ```
 npx wrangler pages deploy . --project-name dachangi --branch main
 ```
-새 도메인은 구글 OAuth 클라이언트의 "승인된 자바스크립트 원본"에 추가해야 로그인됨.
+새 도메인은 구글 OAuth 클라이언트의 "승인된 자바스크립트 원본"에 추가해야 로그인됨. 기존 클라이언트에 도메인만 추가하면 되고 새 클라이언트·키는 불필요(설정 모달에 같은 값 입력).
+
+### 시우챙이 첫 배포 체크리스트
+1. `./deploy.sh siu` → `siuchangi.pages.dev` 생성
+2. 구글 OAuth 클라이언트에 새 도메인 추가
+3. 새 앱 ⚙️ 설정에 CLIENT_ID·Gemini 키 입력(다챙이와 같은 값 재사용), 시트 ID는 **비워서** 새로 자동 생성 → 다챙이 데이터와 완전 분리
+4. (선택) 다챙이 시트의 수동 일기만 복사해 정현체 학습 시드
 
 ## 다음 단계(예정)
 - 생성된 일기를 구글 문서/드라이브에 자동 저장(요청 시 documents 스코프 추가)

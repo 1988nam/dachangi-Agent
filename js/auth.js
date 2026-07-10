@@ -86,7 +86,7 @@ const Auth = (() => {
         if (!_loggedIn) {
           _loggedIn = true;
           console.log('✅ 구글 로그인 완료.');
-          if (onLoginCallback) onLoginCallback({ name: '다챙이 사용자' });
+          if (onLoginCallback) onLoginCallback({ name: (window.APP_BRAND && window.APP_BRAND.userLabel) || '다챙이 사용자' });
         } else {
           console.log('🔄 액세스 토큰 자동 갱신 완료.');
         }
@@ -115,7 +115,7 @@ const Auth = (() => {
         _scheduleTokenRefresh(parseInt(expiry, 10));
         _loggedIn = true;
         console.log('✅ 캐시 토큰 자동 로그인.');
-        if (onLoginCallback) onLoginCallback({ name: '다챙이 사용자' });
+        if (onLoginCallback) onLoginCallback({ name: (window.APP_BRAND && window.APP_BRAND.userLabel) || '다챙이 사용자' });
         return;
       }
       localStorage.removeItem('dachangi_access_token');

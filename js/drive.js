@@ -157,7 +157,7 @@ const DriveAPI = (() => {
     const res = await _authedFetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: '다챙이 일기 사진', mimeType: 'application/vnd.google-apps.folder' }),
+      body: JSON.stringify({ name: (window.APP_BRAND && window.APP_BRAND.photoFolder) || '다챙이 일기 사진', mimeType: 'application/vnd.google-apps.folder' }),
     });
     if (!res.ok) throw new Error(`사진 폴더 생성 실패 (${res.status})`);
     const j = await res.json();
@@ -178,7 +178,7 @@ const DriveAPI = (() => {
     const metaRes = await _authedFetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name || '다챙이 사진.jpg', parents: [folderId], mimeType: mime || 'image/jpeg' }),
+      body: JSON.stringify({ name: name || (window.APP_BRAND && window.APP_BRAND.photoFile) || '다챙이 사진.jpg', parents: [folderId], mimeType: mime || 'image/jpeg' }),
     });
     if (!metaRes.ok) throw new Error(`사진 파일 생성 실패 (${metaRes.status})`);
     const { id } = await metaRes.json();

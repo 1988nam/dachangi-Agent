@@ -69,7 +69,8 @@ const DiaryStore = (() => {
         console.warn('[DiaryStore] 캐시된 시트 사용 불가(확정) → 새 시트 생성:', msg);
       }
     }
-    const created = await REST.createSpreadsheet({ properties: { title: '다챙이 일기 DB' }, sheets: [{ properties: { title: TAB } }] });
+    const _sheetTitle = (window.APP_BRAND && window.APP_BRAND.sheetTitle) || '다챙이 일기 DB';
+    const created = await REST.createSpreadsheet({ properties: { title: _sheetTitle }, sheets: [{ properties: { title: TAB } }] });
     const sid = created.spreadsheetId;
     await REST.valuesUpdate(sid, `${TAB}!A1:H1`, [HEADER]);
     localStorage.setItem(LS_ID, sid);

@@ -131,7 +131,7 @@ const PeopleStore = (() => {
 
   // 일기에서 인물을 부를 호칭 — 나·혜영·아가와 친구·직장 동료는 이름 그대로,
   //  그 외(다른 가족 등)는 관계(예: 장모님)로 부른다. 관계가 비어 있으면 이름으로 폴백.
-  const NAME_CALL = ['나', '혜영', '아가'];
+  const NAME_CALL = (window.APP_BRAND && window.APP_BRAND.nameCall) || ['나', '혜영', '아가'];
   function _callAs(p) {
     // '김혜영'·'혜영이' 같은 변형 저장 허용 — 2자 이상 키워드만 부분일치('나'는 정확일치로 오매칭 방지)
     if (NAME_CALL.some(k => p.name === k || (k.length >= 2 && (p.name.startsWith(k) || p.name.endsWith(k))))) return p.name;
