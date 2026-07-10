@@ -37,6 +37,26 @@ const GeminiAPI = (() => {
     });
   }
 
+  function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // 일시적 서버 오류(429 rate limit, 500/502/503/504 overload)엔 지수 백오프로 자동 재시도.
+  //  503 'high demand'처럼 몇 초 뒤면 풀리는 스파이크를 통째 실패시키지 않기 위함.
+  //  400/401/403 등 확정 오류는 재시도하지 않고 그대로 반환(호출부가 처리).
+  async function _gFetchResilient(base, payloadStr, maxRetries) {
+    const RETRIABLE = [429, 500, 502, 503, 504];
+    const max = (maxRetries == null) ? 4 : maxRetries;
+    let attempt = 0;
+    while (true) {
+      const res = await _gFetch(base, payloadStr);
+      if (res.ok || RETRIABLE.indexOf(res.status) === -1 || attempt >= max) return res;
+      attempt++;
+      const wait = Math.min(16000, 800 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 400);
+      console.warn(`[Gemini] ${res.status} 일시 오류 — ${attempt}/${max}차 재시도 (${wait}ms 후)`);
+      try { await res.text(); } catch (_) {} // 연결 정리
+      await _sleep(wait);
+    }
+  }
+
   async function _call(parts, generationConfig) {
     const model = _cfg().GEMINI_MODEL || 'gemini-2.5-flash';
     const base = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
@@ -53,19 +73,22 @@ const GeminiAPI = (() => {
       gc.maxOutputTokens = Math.max(gc.maxOutputTokens || 0, 8192);
     }
 
-    let res = await _gFetch(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc }));
+    let res = await _gFetchResilient(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc }));
     if (!res.ok && res.status === 400 && gc && gc.thinkingConfig) {
       // '모델 불러오기'로 추가된 임의 모델 방어: thinking 관련 400이면 빼고 1회 재시도
       let body = ''; try { body = await res.text(); } catch (_) {}
       if (/think/i.test(body)) {
         const gc2 = { ...gc }; delete gc2.thinkingConfig;
-        res = await _gFetch(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc2 }));
+        res = await _gFetchResilient(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc2 }));
       } else {
         throw new Error(`Gemini 오류 (400) ${body.slice(0, 200)}`);
       }
     }
     if (!res.ok) {
       let body = ''; try { body = await res.text(); } catch (_) {}
+      if (res.status === 429 || res.status >= 500) {
+        throw new Error(`Gemini 서버가 잠시 혼잡합니다 (${res.status}) — 자동 재시도했지만 계속 실패했어요. 1~2분 뒤 다시 시도하거나, ⚙️ 설정에서 모델을 gemini-2.5-flash-lite 로 바꿔보세요.`);
+      }
       throw new Error(`Gemini 오류 (${res.status}) ${body.slice(0, 200)}`);
     }
     const json = await res.json();
