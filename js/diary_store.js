@@ -243,6 +243,20 @@ const DiaryStore = (() => {
     return { row };
   }
 
+  // 사진 순서/대표 변경 — C=대표(photoIds[0]), D=사진ID목록, F=썸네일 비움(대표가 드라이브 사진이므로).
+  async function _updatePhotoOrderImpl(date, photoIds) {
+    const ids = (photoIds || []).filter(Boolean).slice(0, 3);
+    const sid = await ensureSheet();
+    const res = await REST.valuesGet(sid, `${TAB}!A2:A`);
+    const idx = _findRow(res.values, date);
+    if (idx === -1) throw new Error('해당 날짜의 일기를 찾을 수 없습니다.');
+    const row = idx + 2;
+    await REST.valuesUpdate(sid, `${TAB}!C${row}`, [[ids[0] || '']]);
+    await REST.valuesUpdate(sid, `${TAB}!D${row}`, [[ids.join(',')]]);
+    await REST.valuesUpdate(sid, `${TAB}!F${row}`, [['']]);
+    return { row, photoIds: ids };
+  }
+
   // 일기 한 줄 삭제
   async function _deleteByDateImpl(date) {
     const sid = await ensureSheet();
@@ -268,6 +282,7 @@ const DiaryStore = (() => {
     updateEntry: (oldDate, newDate, text) => _serial(() => _updateEntryImpl(oldDate, newDate, text)),
     updateType: (date, type) => _serial(() => _updateTypeImpl(date, type)),
     updatePhoto: (date, bestPhotoId, thumb) => _serial(() => _updatePhotoImpl(date, bestPhotoId, thumb)),
+    updatePhotoOrder: (date, photoIds) => _serial(() => _updatePhotoOrderImpl(date, photoIds)),
     deleteByDate: (date) => _serial(() => _deleteByDateImpl(date)),
   };
 })();

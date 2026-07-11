@@ -187,6 +187,11 @@ textarea { width: 100%; resize: vertical; line-height: 1.7; }
 .ph-wrap img { opacity: 0.45; }
 .ph-wrap.sel img { opacity: 1; outline: 3px solid var(--accent); }
 .ph-wrap .ph-badge { position: absolute; top: 5px; left: 5px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.45); pointer-events: none; }
+/* 저장 일기 갤러리 — 표지 뱃지 + '표지로' 버튼(순서 변경) */
+.gal-item { position: relative; }
+.gal-badge { position: absolute; top: 6px; left: 6px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.45); pointer-events: none; }
+.gal-cover-btn { position: absolute; bottom: 6px; left: 6px; background: rgba(0,0,0,0.62); color: #fff; border: none; border-radius: 8px; font-size: 11px; font-weight: 600; padding: 4px 9px; cursor: pointer; }
+.gal-cover-btn:hover { background: var(--accent); }
 #diary-text { min-height: 280px; font-size: 14.5px; }
 
 #toast {

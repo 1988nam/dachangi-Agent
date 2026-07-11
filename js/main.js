@@ -413,19 +413,15 @@ async function _changePhoto(item, date) {
     if (btn) btn.textContent = '☁️ 저장 중...';
     const hi = await PhotosPicker.fetchImageBase64(picked[0].baseUrl, 2048);
     const newId = await DriveAPI.uploadPhoto(`${date} 대표.jpg`, hi.data, hi.mime);
-    await DiaryStore.updatePhoto(date, newId, '');
-    // 캐시·카드 화면 갱신(시트 재로드 없이)
+    // 새 사진을 표지로 맨 앞에 두고 기존 사진은 뒤로(최대 3장). C·D·F 모두 갱신.
     const entry = _entriesCache.find(e => e.date === date);
-    if (entry) { entry.bestPhotoId = newId; entry.thumb = ''; }
+    const newIds = [newId].concat((entry && entry.photoIds || []).filter(x => x && x !== newId)).slice(0, 3);
+    await DiaryStore.updatePhotoOrder(date, newIds);
+    if (entry) { entry.bestPhotoId = newId; entry.photoIds = newIds; entry.thumb = ''; }
     item.setAttribute('data-best', newId);
     const ph = item.querySelector('.hist-photo');
-    if (ph) {
-      ph.dataset.loaded = '1';
-      ph.innerHTML = '<span class="hint">🖼️ 새 사진 불러오는 중...</span>';
-      try { const url = await DriveAPI.fetchThumbDataUrl(newId, 1280); ph.innerHTML = `<img src="${url}" style="max-width:480px; width:100%; border-radius:10px; border:1px solid var(--border);" />`; }
-      catch (_) { ph.innerHTML = '<span class="hint">사진을 불러오지 못했습니다.</span>'; }
-    }
-    showToast('✅ 대표 사진이 변경되었습니다.');
+    if (ph && entry) { await _renderEntryGallery(ph, entry); ph.dataset.loaded = '1'; }
+    showToast('✅ 표지 사진이 변경되었습니다.');
   } catch (e) {
     showToast('사진 변경 실패: ' + (e.message || e), 'error');
   } finally { restore(); }
@@ -580,27 +576,45 @@ async function _toggleEntry(item) {
 // 저장된 일기의 사진 갤러리(대표 먼저, 최대 3장). 못 불러오는 사진(삭제/만료)은 조용히 건너뜀.
 async function _renderEntryGallery(container, entry) {
   container.innerHTML = '<span class="hint">🖼️ 사진 불러오는 중...</span>';
-  const urls = [];
+  const items = []; // {id, url} — id='' 이면 순서변경 불가(base64 썸네일)
   // 대표가 base64 썸네일로만 저장된 경우(드라이브 업로드 실패분): 대표를 맨 앞에 먼저 표시
-  if (entry.thumb) urls.push(`data:image/jpeg;base64,${entry.thumb}`);
-  // 표시 대상 ID = [대표, ...photoIds] 중복 제거. 대표를 항상 먼저 시도해야
-  //  옛 포토 일기(photoIds엔 만료 ID, 대표는 드라이브 영구)에서 대표 1장이라도 확실히 나온다.
+  if (entry.thumb) items.push({ id: '', url: `data:image/jpeg;base64,${entry.thumb}` });
+  // 표시 대상 ID = [대표, ...photoIds] 중복 제거. 대표를 항상 먼저 시도(옛 포토 일기는 대표만 영구).
   const ids = [];
   [entry.bestPhotoId].concat(entry.photoIds || []).forEach(id => { if (id && ids.indexOf(id) === -1) ids.push(id); });
   for (const id of ids) {
-    if (urls.length >= 3) break;
+    if (items.length >= 3) break;
     if (entry.thumb && id === entry.bestPhotoId) continue; // base64로 이미 넣은 대표는 중복 방지
     if (typeof DriveAPI === 'undefined') break;
-    try { urls.push(await DriveAPI.fetchThumbDataUrl(id, 1280)); } catch (_) {}
+    try { items.push({ id, url: await DriveAPI.fetchThumbDataUrl(id, 1280) }); } catch (_) {}
   }
-  if (!urls.length) { container.innerHTML = '<span class="hint">사진을 불러오지 못했습니다(삭제/권한/만료).</span>'; return; }
-  // 대표(첫 장)는 크게, 나머지는 2장씩 나란히
-  container.innerHTML = urls.map((u, i) => {
-    const style = (urls.length > 1 && i > 0)
-      ? 'width:calc(50% - 4px); max-height:240px; object-fit:cover;'
-      : 'width:100%; max-width:480px;';
-    return `<img src="${u}" style="${style} border-radius:10px; border:1px solid var(--border);" />`;
+  if (!items.length) { container.innerHTML = '<span class="hint">사진을 불러오지 못했습니다(삭제/권한/만료).</span>'; return; }
+  // 드라이브 사진이 2장 이상이면 '표지로' 버튼으로 순서(대표)를 바꿀 수 있다.
+  const reorderable = items.filter(it => it.id).length > 1;
+  container.innerHTML = items.map((it, i) => {
+    const wide = !(items.length > 1 && i > 0);
+    const box = wide ? 'width:100%; max-width:480px;' : 'width:calc(50% - 4px);';
+    const imgS = wide ? 'width:100%;' : 'width:100%; max-height:240px; object-fit:cover;';
+    const cover = i === 0 ? '<span class="gal-badge">표지</span>' : '';
+    const btn = (reorderable && i !== 0 && it.id) ? `<button class="gal-cover-btn" data-id="${_esc(it.id)}">⭐ 표지로</button>` : '';
+    return `<div class="gal-item" style="${box}"><img src="${it.url}" style="${imgS} border-radius:10px; border:1px solid var(--border);" />${cover}${btn}</div>`;
   }).join('');
+}
+
+// 저장된 일기의 표지(대표)를 이미 첨부된 사진 중 하나로 바꿈(순서 변경). 시트 C/D/F 갱신.
+async function _setCoverPhoto(item, date, id) {
+  if (!id) return;
+  const entry = (_entriesCache || []).find(e => e.date === date);
+  if (!entry || entry.bestPhotoId === id) return;
+  const newIds = [id].concat((entry.photoIds || []).filter(x => x && x !== id)).slice(0, 3);
+  try {
+    await DiaryStore.updatePhotoOrder(date, newIds);
+    entry.photoIds = newIds; entry.bestPhotoId = id; entry.thumb = '';
+    item.setAttribute('data-best', id);
+    const ph = item.querySelector('.hist-photo');
+    if (ph) { await _renderEntryGallery(ph, entry); ph.dataset.loaded = '1'; }
+    showToast('✅ 표지 사진을 바꿨어요.');
+  } catch (e) { showToast('표지 변경 실패: ' + (e.message || e), 'error'); }
 }
 
 // 키워드 검색 (본문/날짜)
@@ -1108,6 +1122,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.closest('.hist-cancel')) { e.stopPropagation(); _renderViewMode(item, date); return; }
     if (e.target.closest('.hist-save')) { e.stopPropagation(); await _saveEdit(item, date); return; }
     if (e.target.closest('.hist-photo-change')) { e.stopPropagation(); _changePhoto(item, date); return; }
+    if (e.target.closest('.gal-cover-btn')) { e.stopPropagation(); await _setCoverPhoto(item, date, e.target.closest('.gal-cover-btn').dataset.id); return; }
     if (e.target.closest('.hist-rewrite')) { e.stopPropagation(); _rewriteInEdit(item); return; }
     if (e.target.closest('.hist-del')) { e.stopPropagation(); await _deleteDiary(item, date); return; }
     if (item.classList.contains('editing')) return;     // 편집 중엔 토글 안 함
