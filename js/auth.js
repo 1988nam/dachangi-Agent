@@ -79,7 +79,9 @@ const Auth = (() => {
         const expiry = Date.now() + (tokenResponse.expires_in || 3600) * 1000;
         localStorage.setItem('dachangi_access_token', accessToken);
         localStorage.setItem('dachangi_token_expiry', expiry);
-        gapi.client.setToken({ access_token: accessToken });
+        // gapi가 아직 로드 전이어도 예외로 로그인 전환(onLoginCallback)을 막지 않게 방어.
+        //  (모든 Drive/Sheets 호출은 REST 직접이라 gapi.client.setToken은 없어도 됨)
+        try { if (window.gapi && gapi.client && gapi.client.setToken) gapi.client.setToken({ access_token: accessToken }); } catch (_) {}
         _scheduleTokenRefresh(expiry);
         _silentRefresh = false;
         _settleWaiters(null, accessToken);
