@@ -62,23 +62,15 @@ const GeminiAPI = (() => {
     const model = _cfg().GEMINI_MODEL || 'gemini-3.5-flash';
     const base = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-    // thinking 제어는 모델별로 파라미터가 다르다:
-    //  · 3.x(3.5-flash 등): thinkingBudget 미지원 → thinkingLevel:'minimal' 로 최소화(둘을 함께 보내면 400)
-    //  · 2.5-flash(레거시): thinkingBudget:0 그대로
-    //  · 그 외(2.5-pro·gemma 등): thinking을 못 끄므로 thinkingConfig 제거 + 출력 토큰 하한 확보
-    //    (thinking이 작은 출력 토큰(랭킹·제목)을 다 써 빈 응답=MAX_TOKENS 되는 것 방지)
+    // thinking 제어: 2.5-flash만 thinkingBudget:0 로 확실히 끌 수 있고, 그 외(3.x 포함)는 못 끄거나
+    //  파라미터(thinkingLevel)가 달라 예측이 어렵다 → thinkingConfig를 빼고 출력 토큰 하한을 크게 확보한다.
+    //  (thinking이 작은 출력 한도(랭킹·제목 1024 등)를 다 써 응답이 잘리거나 빈 응답=MAX_TOKENS 되는 것 방지.
+    //   비용 차이는 편당 몇 원 수준이라 안정성 우선.)
     let gc = generationConfig;
-    if (gc && gc.thinkingConfig) {
-      gc = { ...gc, thinkingConfig: { ...gc.thinkingConfig } };
-      if (/gemini-3\./.test(model)) {
-        delete gc.thinkingConfig.thinkingBudget;
-        if (gc.thinkingConfig.thinkingLevel == null) gc.thinkingConfig.thinkingLevel = 'minimal';
-      } else if (/gemini-2\.5-flash/.test(model)) {
-        delete gc.thinkingConfig.thinkingLevel;
-      } else {
-        delete gc.thinkingConfig;
-        gc.maxOutputTokens = Math.max(gc.maxOutputTokens || 0, 8192);
-      }
+    if (gc && gc.thinkingConfig && !/gemini-2\.5-flash/.test(model)) {
+      gc = { ...gc };
+      delete gc.thinkingConfig;
+      gc.maxOutputTokens = Math.max(gc.maxOutputTokens || 0, 8192);
     }
 
     let res = await _gFetchResilient(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc }));
@@ -371,7 +363,13 @@ const GeminiAPI = (() => {
     const cleaned = String(text || '').replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     let r;
     try { r = JSON.parse(cleaned); }
-    catch (e) { throw new Error(`제목 응답 파싱 실패: ${cleaned.replace(/\s+/g, ' ').slice(0, 120) || '(빈 응답 — 토큰 한도/모델 확인)'}`); }
+    catch (e) {
+      // 응답이 끝에서 잘린 경우(출력 한도 초과 등) — titles 배열의 문자열만 최대한 건져 복구
+      const salvaged = (cleaned.match(/"([^"\\]{1,40})"/g) || [])
+        .map(s => s.slice(1, -1)).filter(s => s && s !== 'titles');
+      if (salvaged.length) r = { titles: salvaged };
+      else throw new Error(`제목 응답 파싱 실패: ${cleaned.replace(/\s+/g, ' ').slice(0, 120) || '(빈 응답 — 토큰 한도/모델 확인)'}`);
+    }
     const titles = Array.isArray(r) ? r : (Array.isArray(r && r.titles) ? r.titles : []);
     return arr.map((_, i) => _clipTitle(titles[i]));
   }
