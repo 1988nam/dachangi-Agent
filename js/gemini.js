@@ -43,14 +43,15 @@ const GeminiAPI = (() => {
   //  503 'high demand'처럼 몇 초 뒤면 풀리는 스파이크를 통째 실패시키지 않기 위함.
   //  400/401/403 등 확정 오류는 재시도하지 않고 그대로 반환(호출부가 처리).
   async function _gFetchResilient(base, payloadStr, maxRetries) {
-    const RETRIABLE = [429, 500, 502, 503, 504];
-    const max = (maxRetries == null) ? 4 : maxRetries;
+    // 429(할당량/속도제한)는 재시도하지 않는다 — 재시도해봐야 할당량만 더 태우고, 원인은 결제·플랜이라 즉시 알림이 낫다.
+    const RETRIABLE = [500, 502, 503, 504];
+    const max = (maxRetries == null) ? 2 : maxRetries;
     let attempt = 0;
     while (true) {
       const res = await _gFetch(base, payloadStr);
       if (res.ok || RETRIABLE.indexOf(res.status) === -1 || attempt >= max) return res;
       attempt++;
-      const wait = Math.min(16000, 800 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 400);
+      const wait = Math.min(16000, 1200 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 400);
       console.warn(`[Gemini] ${res.status} 일시 오류 — ${attempt}/${max}차 재시도 (${wait}ms 후)`);
       try { await res.text(); } catch (_) {} // 연결 정리
       await _sleep(wait);
@@ -58,19 +59,26 @@ const GeminiAPI = (() => {
   }
 
   async function _call(parts, generationConfig) {
-    const model = _cfg().GEMINI_MODEL || 'gemini-2.5-flash';
+    const model = _cfg().GEMINI_MODEL || 'gemini-3.5-flash';
     const base = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-    // thinkingBudget:0 은 2.5-flash 계열에서만 유효 — 2.5-pro는 thinking을 끌 수 없고(400),
-    // 1.5/gemma 등은 thinkingConfig 필드 자체를 거부한다. 그 외 모델엔 보내지 않는다.
+    // thinking 제어는 모델별로 파라미터가 다르다:
+    //  · 3.x(3.5-flash 등): thinkingBudget 미지원 → thinkingLevel:'minimal' 로 최소화(둘을 함께 보내면 400)
+    //  · 2.5-flash(레거시): thinkingBudget:0 그대로
+    //  · 그 외(2.5-pro·gemma 등): thinking을 못 끄므로 thinkingConfig 제거 + 출력 토큰 하한 확보
+    //    (thinking이 작은 출력 토큰(랭킹·제목)을 다 써 빈 응답=MAX_TOKENS 되는 것 방지)
     let gc = generationConfig;
-    if (gc && gc.thinkingConfig && !/gemini-2\.5-flash/.test(model)) {
-      // 이 모델은 thinking을 끌 수 없다(2.5-pro 등). thinking이 작은 출력 토큰(랭킹 256·제목 1024 등)을
-      //  다 써버려 빈 응답(finishReason=MAX_TOKENS)이 되는 걸 막으려고, thinkingConfig는 빼되
-      //  출력 토큰 하한을 크게 확보한다(일기 생성이 8192로 정상 동작하는 모델 기준).
-      gc = { ...gc };
-      delete gc.thinkingConfig;
-      gc.maxOutputTokens = Math.max(gc.maxOutputTokens || 0, 8192);
+    if (gc && gc.thinkingConfig) {
+      gc = { ...gc, thinkingConfig: { ...gc.thinkingConfig } };
+      if (/gemini-3\./.test(model)) {
+        delete gc.thinkingConfig.thinkingBudget;
+        if (gc.thinkingConfig.thinkingLevel == null) gc.thinkingConfig.thinkingLevel = 'minimal';
+      } else if (/gemini-2\.5-flash/.test(model)) {
+        delete gc.thinkingConfig.thinkingLevel;
+      } else {
+        delete gc.thinkingConfig;
+        gc.maxOutputTokens = Math.max(gc.maxOutputTokens || 0, 8192);
+      }
     }
 
     let res = await _gFetchResilient(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc }));
@@ -78,7 +86,7 @@ const GeminiAPI = (() => {
       // '모델 불러오기'로 추가된 임의 모델 방어: thinking 관련 400이면 빼고 1회 재시도
       let body = ''; try { body = await res.text(); } catch (_) {}
       if (/think/i.test(body)) {
-        const gc2 = { ...gc }; delete gc2.thinkingConfig;
+        const gc2 = { ...gc }; delete gc2.thinkingConfig; gc2.maxOutputTokens = Math.max(gc2.maxOutputTokens || 0, 8192);
         res = await _gFetchResilient(base, JSON.stringify({ contents: [{ parts }], generationConfig: gc2 }));
       } else {
         throw new Error(`Gemini 오류 (400) ${body.slice(0, 200)}`);
@@ -86,8 +94,11 @@ const GeminiAPI = (() => {
     }
     if (!res.ok) {
       let body = ''; try { body = await res.text(); } catch (_) {}
-      if (res.status === 429 || res.status >= 500) {
-        throw new Error(`Gemini 서버가 잠시 혼잡합니다 (${res.status}) — 자동 재시도했지만 계속 실패했어요. 1~2분 뒤 다시 시도하거나, ⚙️ 설정에서 모델을 gemini-2.5-flash-lite 로 바꿔보세요.`);
+      if (res.status === 429) {
+        throw new Error('Gemini 사용량 한도(429)에 걸렸습니다 — 무료 한도 소진 또는 결제/플랜 문제일 수 있어요. 잠시 후 재시도하거나, ⚙️ 설정에서 OAuth를 끄고 유료 API 키를 쓰거나 결제 상태를 확인하세요.');
+      }
+      if (res.status >= 500) {
+        throw new Error(`Gemini 서버가 잠시 혼잡합니다 (${res.status}) — 자동 재시도했지만 계속 실패했어요. 1~2분 뒤 다시 시도하거나, ⚙️ 설정에서 모델을 gemini-3.1-flash-lite 로 바꿔보세요.`);
       }
       throw new Error(`Gemini 오류 (${res.status}) ${body.slice(0, 200)}`);
     }

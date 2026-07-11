@@ -632,15 +632,18 @@ async function renderMonthList() {
   if (!_entriesCache.length) { listEl.innerHTML = '<div class="hint" style="padding:6px 4px;">저장한 일기 없음.<br/>일기를 만들고 💾 저장하세요.</div>'; return; }
   const byMonth = {};
   const titleOf = {};
+  const typeOf = {};
   _entriesCache.forEach(e => {
     const m = (e.date || '').slice(0, 7); if (!m) return;
     (byMonth[m] = byMonth[m] || []).push(e.date);
     titleOf[e.date] = e.title || '';
+    typeOf[e.date] = e.type || '';
   });
-  // 날짜 항목 버튼 — "15일 [제목]"처럼 날짜 옆에 짧은 제목을 흐리게 덧붙인다(없으면 날짜만).
+  // 날짜 항목 버튼 — "15일 ✍️ [제목]"처럼 날짜 옆에 (수동이면)수동 이모지 + 짧은 제목을 흐리게 덧붙인다.
   const _dateItemHtml = (d, dayLabel) => {
     const t = titleOf[d] || '';
-    return `<button class="date-item" data-date="${d}"><span class="d-day">${dayLabel}</span>${t ? `<span class="d-title">${_esc(t)}</span>` : ''}</button>`;
+    const manual = typeOf[d] === 'manual' ? '<span class="d-manual" title="수동 일기" style="margin:0 3px;">✍️</span>' : '';
+    return `<button class="date-item" data-date="${d}"><span class="d-day">${dayLabel}</span>${manual}${t ? `<span class="d-title">${_esc(t)}</span>` : ''}</button>`;
   };
   const months = Object.keys(byMonth).sort().reverse();
   // 올해 월은 최상위에 그대로(1클릭 접근), 과거 연도는 「▸ yyyy년」 그룹으로 접어 스크롤을 줄인다.

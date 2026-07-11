@@ -245,7 +245,9 @@ const DiaryAgent = (() => {
       // 사용자가 대표 사진을 직접 고를 수 있도록 후보 전체를 보관(기본 대표 = Gemini 1순위)
       const allImages = candImages;
       const repDefaultIdx = Math.max(0, allImages.indexOf(topImages[0]));
-      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, _uploadCache: {}, bestId: '', bestThumb: '', style, keywords, title };
+      // 첨부 기본값 = AI 상위 최대 3장(allImages 인덱스). 사용자가 결과 카드에서 클릭으로 바꿈.
+      const _attachDefault = topImages.slice(0, 3).map(t => allImages.indexOf(t)).filter(i => i >= 0);
+      _last = { dateStr, diary, source, allImages, topImages, bestIndex: repDefaultIdx, attachIdxs: _attachDefault.length ? _attachDefault : [repDefaultIdx], _uploadCache: {}, bestId: '', bestThumb: '', style, keywords, title };
 
       // 기본 대표 사진을 영구·고화질로 보관(포토=드라이브 업로드, 실패 시 시트 썸네일 폴백)
       let bestThumb = '';
@@ -276,15 +278,15 @@ const DiaryAgent = (() => {
       const saveBtn = document.getElementById('save-diary-btn');
       if (saveBtn) saveBtn.disabled = true;
       try {
-        // 대표(topImages[0]) 외 선택 사진도 영구 보관 → photoIds 에 함께 저장(저장된 일기에서 1~3장 표시)
-        const _repId = bestId || (topImages[0] || {}).id || '';
-        const _extraIds = await _persistExtras(source, dateStr, topImages.slice(1), _last._uploadCache, allImages);
+        // 첨부로 고른 사진(기본=AI 상위, 최대 3장)을 영구 보관 → photoIds 로 저장
+        const _photoIds = await _persistAttached(_last, dateStr);
+        const _fallbackId = bestId || (topImages[0] || {}).id || '';
         await DiaryStore.saveEntry({
           date: dateStr,
           text: diary.trim(),
-          bestPhotoId: _repId,
-          photoIds: _mergePhotoIds(_repId, _extraIds, topImages.length),
-          thumb: bestThumb || '',
+          bestPhotoId: _photoIds[0] || _fallbackId,
+          photoIds: _photoIds.length ? _photoIds : (_fallbackId ? [_fallbackId] : []),
+          thumb: _photoIds.length ? '' : (bestThumb || ''),
           title,
         });
         if (saveBtn) saveBtn.disabled = false;
@@ -364,7 +366,7 @@ const DiaryAgent = (() => {
       const s = _step('✍️ 직접 작성 모드 — 사진 준비 완료', true);
       _done(s, '사진 준비 완료 — 아래에 일기를 직접 쓰고 💾로 저장하세요');
 
-      _last = { dateStr, diary: '', source, allImages, topImages, bestIndex: 0, _uploadCache: {}, bestId: (topImages[0] || {}).id || '', bestThumb: '', style: {}, keywords: '', type: 'manual', title: '' };
+      _last = { dateStr, diary: '', source, allImages, topImages, bestIndex: 0, attachIdxs: topImages.slice(0, 3).map((_, i) => i), _uploadCache: {}, bestId: (topImages[0] || {}).id || '', bestThumb: '', style: {}, keywords: '', type: 'manual', title: '' };
       _render(dateStr, allImages, 0, '');
       const ta = document.getElementById('diary-text'); if (ta) ta.focus();
     } catch (e) {
@@ -444,7 +446,34 @@ const DiaryAgent = (() => {
     return ids;
   }
 
-  // [대표ID, ...추가ID] 를 중복 제거하고 최대 maxN장으로 — 저장할 photoIds 구성
+  // 첨부로 고른 사진(attachIdxs 순서, ①=표지)을 전부 영구 보관 → [표지, ...] drive fileId 배열(최대 3).
+  //  포토 소스: 각 사진 드라이브 업로드(표지 2048px·나머지 1280px, _uploadCache 재사용). 드라이브 소스: 원본 파일ID.
+  async function _persistAttached(snap, dateStr) {
+    const idxs = (snap.attachIdxs && snap.attachIdxs.length ? snap.attachIdxs : [snap.bestIndex || 0]).slice(0, 3);
+    const ids = [];
+    for (let n = 0; n < idxs.length; n++) {
+      const img = snap.allImages[idxs[n]];
+      if (!img) continue;
+      const isCover = (n === 0);
+      let id = '';
+      if (snap.source === 'photos') {
+        if (snap._uploadCache[idxs[n]]) { id = snap._uploadCache[idxs[n]]; }
+        else {
+          try {
+            const hi = img.baseUrl ? await PhotosPicker.fetchImageBase64(img.baseUrl, isCover ? 2048 : 1280) : { mime: img.mime, data: img.data };
+            id = await DriveAPI.uploadPhoto(`${dateStr}${isCover ? ' 대표' : ' ' + (n + 1)}.jpg`, hi.data, hi.mime);
+            snap._uploadCache[idxs[n]] = id;
+          } catch (e) { console.warn('[Diary] 첨부 사진 저장 실패:', e); }
+        }
+      } else {
+        id = img.id || '';
+      }
+      if (id && ids.indexOf(id) === -1) ids.push(id);
+    }
+    return ids;
+  }
+
+  // [대표ID, ...추가ID] 를 중복 제거하고 최대 maxN장으로 — 저장할 photoIds 구성(배치 전용)
   function _mergePhotoIds(repId, extraIds, maxN) {
     const out = [];
     [repId].concat(extraIds || []).forEach(v => { if (v && out.indexOf(v) === -1) out.push(v); });
@@ -511,20 +540,43 @@ const DiaryAgent = (() => {
   function _render(dateStr, images, bestIdx, diary) {
     const rd = document.getElementById('result-date');
     if (rd) rd.value = dateStr; // 날짜를 바꾸고 💾를 누르면 그 날짜로 이동 등록(_finalizeImpl)
-    const strip = document.getElementById('photo-strip');
-    strip.innerHTML = images.map((im, i) =>
-      `<img src="data:${im.mime};base64,${im.data}" data-idx="${i}" class="${i === bestIdx ? 'best' : ''}" title="${_escAttr(im.name || '')}" />`
-    ).join('');
-    strip.querySelectorAll('img').forEach(im => im.addEventListener('click', () => {
-      const idx = parseInt(im.dataset.idx, 10);
-      setBestIndex(idx);
-      strip.querySelectorAll('img').forEach(x => x.classList.toggle('best', parseInt(x.dataset.idx, 10) === idx));
-    }));
+    _renderStrip(document.getElementById('photo-strip'), images);
     document.getElementById('diary-text').value = diary.trim();
     _markManualCard(_last && _last.type === 'manual'); // 수동/자동에 따라 결과 카드 표기 전환
     // CSS에 #result-card{display:none}이 있어 ''로 두면 다시 숨겨짐 → 'block'으로 명시해야 저장 버튼이 보임
     document.getElementById('result-card').style.display = 'block';
     document.getElementById('result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // 사진 줄(strip)을 '첨부 선택기'로 렌더 — 클릭으로 일기에 넣을 사진 1~3장 토글, 번호(①②③) 표시(①=표지).
+  function _renderStrip(strip, images) {
+    if (!strip) return;
+    const attach = (_last && _last.attachIdxs) || [];
+    strip.innerHTML = images.map((im, i) => {
+      const pos = attach.indexOf(i);
+      const sel = pos >= 0;
+      const badge = sel ? `<span class="ph-badge">${pos + 1}</span>` : '';
+      return `<span class="ph-wrap${sel ? ' sel' : ''}${pos === 0 ? ' cover' : ''}" data-idx="${i}"><img src="data:${im.mime};base64,${im.data}" title="${_escAttr(im.name || '')}" />${badge}</span>`;
+    }).join('');
+    strip.querySelectorAll('.ph-wrap').forEach(w => w.addEventListener('click', () => {
+      _toggleAttach(parseInt(w.dataset.idx, 10));
+      _renderStrip(strip, images);
+    }));
+  }
+
+  // 첨부 토글 — 최대 3장, 최소 1장. 선택 순서가 곧 표시 순서이며 첫 번째가 표지(대표).
+  function _toggleAttach(idx) {
+    if (!_last) return;
+    const arr = _last.attachIdxs = (_last.attachIdxs || []);
+    const at = arr.indexOf(idx);
+    if (at >= 0) {
+      if (arr.length <= 1) { if (typeof showToast === 'function') showToast('최소 1장은 넣어야 해요.'); return; }
+      arr.splice(at, 1);
+    } else {
+      if (arr.length >= 3) { if (typeof showToast === 'function') showToast('사진은 최대 3장까지 넣을 수 있어요.'); return; }
+      arr.push(idx);
+    }
+    _last.bestIndex = arr[0]; // 표지 = 첫 번째 선택
   }
 
   // 결과 카드를 '수동 작성' 모드로 표기 전환 — 뱃지/안내문/플레이스홀더를 바꾸고,
@@ -534,8 +586,8 @@ const DiaryAgent = (() => {
     if (badge) badge.style.display = isManual ? '' : 'none';
     const meta = document.getElementById('result-meta');
     if (meta) meta.innerHTML = isManual
-      ? '선정된 사진 — <b>대표로 쓸 사진을 클릭해 고르세요</b> (보라 테두리 = 대표). 아래에 <b>오늘의 일기를 직접 작성</b>하고 💾로 저장하세요.'
-      : '선정된 사진 — <b>대표로 쓸 사진을 클릭해 고르세요</b> (보라 테두리 = 대표). 일기 내용도 아래에서 수정할 수 있어요.';
+      ? '사진 — <b>일기에 넣을 사진을 1~3장 클릭해 고르세요</b> (번호 = 순서, ①=표지). 아래에 <b>오늘의 일기를 직접 작성</b>하고 💾로 저장하세요.'
+      : '사진 — <b>일기에 넣을 사진을 1~3장 클릭해 고르세요</b> (번호 = 순서, ①=표지). 일기 내용도 아래에서 수정할 수 있어요.';
     const ta = document.getElementById('diary-text');
     if (ta) ta.placeholder = isManual ? '여기에 오늘의 일기를 직접 작성하세요...' : '일기가 여기에 표시됩니다.';
     const regen = document.getElementById('regenerate-btn');
@@ -831,26 +883,6 @@ const DiaryAgent = (() => {
       const dEl = document.getElementById('diary-date'); if (dEl) dEl.value = newDate;
     }
     const dateStr = snap.dateStr;
-    const idx = snap.bestIndex || 0;
-    const rep = allImages[idx];
-    let bestId = '';
-    let thumb = '';
-    if (source === 'photos') {
-      if (snap._uploadCache[idx]) {
-        bestId = snap._uploadCache[idx]; // 이미 업로드한 후보면 재사용
-      } else if (rep) {
-        try {
-          const hi = rep.baseUrl ? await PhotosPicker.fetchImageBase64(rep.baseUrl, 2048) : { mime: rep.mime, data: rep.data };
-          bestId = await DriveAPI.uploadPhoto(`${dateStr} 대표.jpg`, hi.data, hi.mime);
-          snap._uploadCache[idx] = bestId;
-        } catch (e) {
-          console.warn('[Diary] finalize 업로드 실패, 시트 썸네일 폴백:', e);
-          try { thumb = await _makeThumb(rep, 512); } catch (_) {}
-        }
-      }
-    } else {
-      bestId = (rep || {}).id || '';
-    }
     // 제목: 본문이 바뀌었거나 아직 제목이 없을 때만 새로 생성(불필요한 Gemini 호출 절약).
     //  수동 일기의 첫 저장(snap.diary='')도 여기서 본문 기준으로 제목을 만든다.
     const curText = (text || '').trim();
@@ -858,22 +890,25 @@ const DiaryAgent = (() => {
     if (!title || curText !== (snap.diary || '').trim()) {
       try { title = await GeminiAPI.generateTitle(curText); } catch (e) { console.warn('[Diary] finalize 제목 생성 실패:', e); }
     }
-    // 대표(rep) 외 선택 사진도 영구 보관 → photoIds 구성(대표 먼저). 이미 올린 건 _uploadCache 재사용.
-    const _repIdF = bestId || (rep || {}).id || '';
-    const _extrasF = (topImages || []).filter(t => t && t !== rep);
-    const _extraIdsF = await _persistExtras(source, dateStr, _extrasF, snap._uploadCache, allImages);
+    // 첨부로 고른 사진(최대 3장, ①=표지)을 영구 보관 → photoIds
+    const photoIds = await _persistAttached(snap, dateStr);
+    let thumb = '';
+    if (!photoIds.length) { // 전부 업로드 실패 → 표지 썸네일 폴백
+      const cover = allImages[(snap.attachIdxs && snap.attachIdxs.length) ? snap.attachIdxs[0] : (snap.bestIndex || 0)];
+      if (cover) try { thumb = await _makeThumb(cover, 512); } catch (_) {}
+    }
     await DiaryStore.saveEntry({
       date: dateStr,
       text: curText,
-      bestPhotoId: _repIdF,
-      photoIds: _mergePhotoIds(_repIdF, _extraIdsF, (topImages || []).length),
+      bestPhotoId: photoIds[0] || '',
+      photoIds: photoIds,
       thumb: thumb,
       type: snap.type || '', // 'manual'이면 '수동'으로 표기 저장
       title,
     });
     snap.diary = text;
     snap.title = title;
-    snap.bestId = bestId;
+    snap.bestId = photoIds[0] || '';
     snap.bestThumb = thumb;
     // 수동 일기는 자동 저장이 없어 여기서 인물 감지를 1회 실행(자동 생성의 _processFaces와 동일 역할, 비차단)
     if (snap.type === 'manual' && !snap._facesProcessed) {

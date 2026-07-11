@@ -13,8 +13,8 @@
   <meta name="apple-mobile-web-app-title" content="다챙이" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <!-- 앱 브랜딩(제목·홈화면 이름). 아이별 배포 시 deploy.sh 가 이 파일을 교체 -->
-  <script src="js/brand.js?v=56"></script>
-  <link rel="stylesheet" href="style.css?v=56" />
+  <script src="js/brand.js?v=57"></script>
+  <link rel="stylesheet" href="style.css?v=57" />
 </head>
 <body>
 
@@ -141,7 +141,7 @@
 
           <div class="card" id="result-card">
             <div class="card-title">📖 생성된 일기 <span id="manual-badge" class="manual-tag" style="display:none;">✍️ 수동</span> <input type="date" id="result-date" style="margin-left:8px; width:160px; font-size:13px;" title="날짜를 바꾸고 💾 등록을 누르면 일기가 그 날짜로 이동합니다" /></div>
-            <div class="diary-meta" id="result-meta">선정된 사진 — <b>대표로 쓸 사진을 클릭해 고르세요</b> (보라 테두리 = 대표). 일기 내용도 아래에서 수정할 수 있어요.</div>
+            <div class="diary-meta" id="result-meta">사진 — <b>일기에 넣을 사진을 1~3장 클릭해 고르세요</b> (번호 = 순서, ①=표지). 일기 내용도 아래에서 수정할 수 있어요.</div>
             <div class="photo-strip" id="photo-strip"></div>
             <textarea id="diary-text" placeholder="일기가 여기에 표시됩니다."></textarea>
             <label id="manual-toggle-wrap" style="display:flex; align-items:center; gap:8px; margin:8px 0 2px; font-size:13px; cursor:pointer;" title="AI 초안을 직접 고쳤다면 켜세요. 켜고 저장하면 '수동' 일기로 기록되어 ✍️ 정현체 문체·어투 학습에 포함됩니다.">
@@ -149,7 +149,7 @@
               <span>✍️ <b>내가 고쳐 쓴(수동) 일기로 표시</b> <span style="color:var(--text-muted);">— 저장 시 ‘수동’ 딱지가 붙고 정현체 학습에 포함</span></span>
             </label>
             <div class="modal-actions" style="justify-content:flex-start; flex-wrap:wrap;">
-              <button id="save-diary-btn" class="btn">💾 수정·대표사진 반영 등록</button>
+              <button id="save-diary-btn" class="btn">💾 수정·사진 반영 등록</button>
               <button id="copy-btn" class="btn btn-ghost">📋 복사</button>
               <button id="download-btn" class="btn btn-ghost">⬇️ .txt 다운로드</button>
               <button id="regenerate-btn" class="btn btn-ghost">🔄 다시 생성</button>
@@ -216,9 +216,9 @@
         <label>Gemini 모델</label>
         <div style="display:flex; gap:8px; align-items:center;">
           <select id="cfg-gemini-model" style="flex:1;">
-            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-            <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+            <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+            <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (저렴)</option>
+            <option value="gemini-3.1-pro">gemini-3.1-pro (고품질)</option>
           </select>
           <button type="button" id="cfg-load-models" class="btn btn-ghost" style="white-space:nowrap; padding:9px 12px;">🔄 모델 불러오기</button>
         </div>
@@ -317,7 +317,7 @@
     window.DACHANGI_CONFIG = (typeof DACHANGI_CONFIG !== 'undefined') ? DACHANGI_CONFIG : {};
     const _defaults = {
       CLIENT_ID: '', API_KEY: '', GEMINI_API_KEY: '',
-      GEMINI_MODEL: 'gemini-2.5-flash',
+      GEMINI_MODEL: 'gemini-3.5-flash',
       GEMINI_USE_OAUTH: false,
       PHOTO_SOURCE: 'photos',
       MAIN_PHOTO_FOLDER_ID: '',
@@ -345,8 +345,8 @@
         for (const k in parsed) if (parsed[k] !== undefined && parsed[k] !== null) DACHANGI_CONFIG[k] = parsed[k];
       }
     } catch (e) { console.error('config 로드 에러:', e); }
-    // gemini-1.5 계열은 2025-09 서비스 종료(모든 호출 404) → 저장돼 있으면 현행 모델로 자동 마이그레이션
-    if (/^gemini-1\.5-/.test(DACHANGI_CONFIG.GEMINI_MODEL || '')) DACHANGI_CONFIG.GEMINI_MODEL = 'gemini-2.5-flash';
+    // 은퇴 모델(1.5/2.0/2.5 계열; 2.5-flash는 2026-07 조기 404) → 저장돼 있으면 현행 모델로 자동 마이그레이션
+    if (/^gemini-(1\.5|2\.0|2\.5)/.test(DACHANGI_CONFIG.GEMINI_MODEL || '')) DACHANGI_CONFIG.GEMINI_MODEL = 'gemini-3.5-flash';
     // Gemini OAuth 사용 시 로그인 권한(SCOPES)에 generative-language 추가(키 없이 호출 가능)
     if (DACHANGI_CONFIG.GEMINI_USE_OAUTH) {
       const need = ['https://www.googleapis.com/auth/generative-language.retriever', 'https://www.googleapis.com/auth/cloud-platform'];
@@ -356,17 +356,17 @@
     }
   </script>
 
-  <script src="js/auth.js?v=56"></script>
-  <script src="js/gapi_rest.js?v=56"></script>
-  <script src="js/drive.js?v=56"></script>
-  <script src="js/photos_picker.js?v=56"></script>
-  <script src="js/gemini.js?v=56"></script>
-  <script src="js/diary_store.js?v=56"></script>
-  <script src="js/people_store.js?v=56"></script>
-  <script src="js/migrate.js?v=56"></script>
-  <script src="js/diary.js?v=56"></script>
-  <script src="js/config_modal.js?v=56"></script>
-  <script src="js/main.js?v=56"></script>
+  <script src="js/auth.js?v=57"></script>
+  <script src="js/gapi_rest.js?v=57"></script>
+  <script src="js/drive.js?v=57"></script>
+  <script src="js/photos_picker.js?v=57"></script>
+  <script src="js/gemini.js?v=57"></script>
+  <script src="js/diary_store.js?v=57"></script>
+  <script src="js/people_store.js?v=57"></script>
+  <script src="js/migrate.js?v=57"></script>
+  <script src="js/diary.js?v=57"></script>
+  <script src="js/config_modal.js?v=57"></script>
+  <script src="js/main.js?v=57"></script>
 
   <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
