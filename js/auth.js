@@ -134,7 +134,10 @@ const Auth = (() => {
   }
 
   function login() {
-    if (tokenClient) tokenClient.requestAccessToken({ prompt: 'consent' });
+    // (버그수정) 'consent'는 이미 동의했더라도 매번 동의 화면을 다시 띄우라는 강제 옵션이라,
+    // 로그인할 때마다 미확인 앱 경고('확인하지 않은 앱' → 고급 → 이동)를 다시 통과해야 했다.
+    // ''로 두면 이미 승인된 스코프는 동의 화면 없이 토큰만 재발급된다(최초 1회만 승인).
+    if (tokenClient) tokenClient.requestAccessToken({ prompt: '' });
     else console.error('[Auth] GIS 미초기화 (설정 먼저 완료).');
   }
 
