@@ -47,6 +47,7 @@ const DiaryStore = (() => {
   }
 
   async function _ensureImpl() {
+    if (window.Olchangi && !Olchangi.dataChecked('dachangi')) throw new Error('먼저 기존 다챙이 데이터를 연결해 주세요.');
     const cfg = window.DACHANGI_CONFIG || {};
     const fromCfg = REST.extractId(cfg.DIARY_SHEET_ID || '');
     const sidExisting = fromCfg || localStorage.getItem(LS_ID) || '';
@@ -58,15 +59,7 @@ const DiaryStore = (() => {
       } catch (e) {
         const msg = String((e && e.message) || e);
         // 설정에 명시한 시트는 사용자가 지정한 것 — 임의로 새로 만들지 않고 명확히 알림
-        if (fromCfg) throw new Error(`설정의 일기 시트에 접근할 수 없습니다 — 삭제/휴지통/계정 권한을 확인하세요. [원본] ${msg}`);
-        // 캐시(자동 생성) ID는 확정적 사용 불가일 때만 폴백해 새 시트를 만든다(끝의 setItem이 캐시를 덮어씀).
-        //  · 휴지통 / 404(삭제·Drive 접근불가) / 403+권한거부(다른 계정 로그인 — Sheets는 이때 403 PERMISSION_DENIED)
-        //  일시적 오류(네트워크·401만료·403쿼터·429·5xx)는 캐시를 보존한 채 그대로 전파 —
-        //  빈 새 시트로 포크되어 기존 일기 히스토리가 사라지는 것을 막는다.
-        const is403Perm = /\(403\)/.test(msg) && /permission|PERMISSION_DENIED|insufficient|forbidden/i.test(msg);
-        const definitive = /휴지통/.test(msg) || /\(404\)/.test(msg) || is403Perm;
-        if (!definitive) throw e;
-        console.warn('[DiaryStore] 캐시된 시트 사용 불가(확정) → 새 시트 생성:', msg);
+        throw new Error(`기존 일기 시트에 접근할 수 없습니다. 원래 Google 계정과 시트 권한을 확인하세요. 새 시트는 만들지 않았습니다. [원본] ${msg}`);
       }
     }
     const _sheetTitle = (window.APP_BRAND && window.APP_BRAND.sheetTitle) || '다챙이 일기 DB';
@@ -85,6 +78,8 @@ const DiaryStore = (() => {
 
   // 전체 일기 로드(최신순)
   async function loadEntries() {
+    // Opening the history must never create an empty replacement database.
+    if (!currentSheetId()) return [];
     const sid = await ensureSheet();
     const res = await REST.valuesGet(sid, `${TAB}!A2:H`);
     const rows = res.values || [];

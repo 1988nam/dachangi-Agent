@@ -21,14 +21,14 @@
   theme.innerHTML = '<option value="dark">다크</option><option value="light">화이트</option>';
   theme.value = document.documentElement.dataset.theme || 'dark';
   theme.addEventListener('change', () => window.OlchangiTheme.set(theme.value)); tools.append(theme); nav.append(tools);
-  if (id === 'toochangi' && !base && window.Olchangi) {
+  if (['toochangi', 'dachangi'].includes(id) && !base && window.Olchangi) {
     const repair = document.createElement('button'); repair.id = 'legacy-data-connect'; repair.className = 'btn-ghost'; repair.textContent = '기존 데이터 연결';
     repair.addEventListener('click', async () => {
       repair.disabled = true;
-      try { await Olchangi.importSettings('toochangi', true); location.reload(); }
+      try { await Olchangi.importSettings(id, true); location.reload(); }
       catch (error) { window.alert(error.message); repair.disabled = false; }
     });
-    document.querySelector('.topbar-right')?.prepend(repair);
+    document.querySelector(id === 'dachangi' ? '.side-foot' : '.topbar-right')?.prepend(repair);
   }
   const skip = document.createElement('a'); skip.className = 'skip-link'; skip.href = '#main-content'; skip.textContent = '본문으로 바로가기';
   skip.addEventListener('click', event => {

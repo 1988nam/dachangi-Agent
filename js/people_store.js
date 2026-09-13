@@ -41,6 +41,7 @@ const PeopleStore = (() => {
   }
 
   async function loadPeople() {
+    if (!DiaryStore.currentSheetId()) return [];
     const sid = await _sid();
     await _ensureTab(sid);
     const res = await REST.valuesGet(sid, `${TAB}!A2:G`);

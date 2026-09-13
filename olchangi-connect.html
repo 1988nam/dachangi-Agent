@@ -1,4 +1,4 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>올챙이 Agent 연결</title><script src="/shared/theme.js"></script><link rel="stylesheet" href="/shared/tokens.css"><style>body{font:15px/1.8 system-ui,sans-serif;background:var(--canvas);color:var(--ink);max-width:440px;margin:12vh auto;padding:25px}h1{font-size:27px}button{background:var(--brand);color:var(--on-accent);border:0;border-radius:8px;padding:13px 22px;cursor:pointer;font:inherit}button:disabled{opacity:.5}p{color:var(--ink-soft)}</style></head><body><h1>◕ 올챙이 Agent 연결</h1><p id="description"></p><button id="connect" disabled>연결 준비 중</button><p id="result" role="status"></p><script>window.OLCHANGI_CONNECT_CONFIG={"clientId":"","agent":"dachangi"};</script><script>(() => {
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>올챙이 Agent 연결</title><script src="/shared/theme.js"></script><link rel="stylesheet" href="/shared/tokens.css"><style>body{font:15px/1.8 system-ui,sans-serif;background:var(--canvas);color:var(--ink);max-width:440px;margin:12vh auto;padding:25px}h1{font-size:27px}button{background:var(--brand);color:var(--on-accent);border:0;border-radius:8px;padding:13px 22px;cursor:pointer;font:inherit}button:disabled{opacity:.5}p{color:var(--ink-soft)}</style></head><body><h1>◕ 올챙이 Agent 연결</h1><p id="description"></p><button id="connect" disabled>연결 준비 중</button><p id="result" role="status"></p><script>window.OLCHANGI_CONNECT_CONFIG={"clientId":"651656383566-7tnom3kcpmp2595kt8htocgl0v35h80e.apps.googleusercontent.com","agent":"dachangi"};</script><script>(() => {
   const params = new URLSearchParams(location.hash.slice(1));
   const origin = params.get('origin'), state = params.get('state'), mode = params.get('mode');
   const allowed = new Set(['https://olchangi.pages.dev', 'https://toochangi.pages.dev', 'https://gachangi.pages.dev', 'https://dachangi.pages.dev', 'http://localhost:8788', 'http://127.0.0.1:8788']);
@@ -6,7 +6,7 @@
   const { agent } = window.OLCHANGI_CONNECT_CONFIG;
   const configKey = { toochangi: 'toochangi_config_overrides', gachangi: 'gachangi_config', dachangi: 'dachangi_config' }[agent];
   let existing = {}; try { existing = JSON.parse(localStorage.getItem(configKey)) || {}; } catch {}
-  const clientId = existing.CLIENT_ID || window.OLCHANGI_CONNECT_CONFIG.clientId;
+  const clientId = window.OLCHANGI_CONNECT_CONFIG.clientId || existing.CLIENT_ID;
   if (!allowed.has(origin) || !state || !window.opener || !['login', 'settings', 'data'].includes(mode)) { result.textContent = '올챙이 Agent에서 연결을 시작해 주세요.'; return; }
   const names = { toochangi: '투챙이', gachangi: '가챙이', dachangi: '다챙이' };
   function send(value, error) { window.opener.postMessage({ type: 'olchangi-connect', state, value, error }, origin); }
@@ -27,7 +27,7 @@
   window.bridgeReady = () => {
     if (mode === 'login') {
       if (!clientId || !clientId.endsWith('.apps.googleusercontent.com')) { result.textContent = '기존 투챙이의 설정에서 Google CLIENT_ID를 먼저 저장해 주세요.'; button.textContent = '기존 설정 필요'; return; }
-      const allowedScopes = new Set(['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly', 'https://www.googleapis.com/auth/generative-language', 'https://www.googleapis.com/auth/generative-language.retriever', 'https://www.googleapis.com/auth/cloud-platform']);
+      const allowedScopes = new Set(['openid', 'email', 'https://www.googleapis.com/auth/drive.appdata', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly', 'https://www.googleapis.com/auth/generative-language', 'https://www.googleapis.com/auth/generative-language.retriever', 'https://www.googleapis.com/auth/cloud-platform']);
       const requested = (params.get('scopes') || '').split(/\s+/).filter(s => allowedScopes.has(s));
       if (!requested.length) { result.textContent = '로그인 권한이 지정되지 않았습니다.'; return; }
       tokenClient = google.accounts.oauth2.initTokenClient({ client_id: clientId, scope: [...new Set(requested)].join(' '),
