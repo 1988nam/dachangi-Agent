@@ -27,7 +27,8 @@ mkdir -p "$OUT"
 
 # 공통 소스 복사(.git / .deploy / brand / node_modules 는 제외)
 cp -R "$ROOT/index.html" "$ROOT/style.css" "$ROOT/sw.js" \
-      "$ROOT/manifest.webmanifest" "$ROOT/js" "$ROOT/icons" "$ROOT/functions" "$OUT/"
+      "$ROOT/manifest.webmanifest" "$ROOT/js" "$ROOT/icons" "$ROOT/functions" \
+      "$ROOT/shared" "$ROOT/olchangi-connect.html" "$OUT/"
 
 # 아이별 브랜드 오버레이(있으면 덮어씀 — dachangi 는 기본값이라 오버레이 불필요)
 BRAND_DIR="$ROOT/brand/$CHILD"

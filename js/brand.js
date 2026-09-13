@@ -18,7 +18,7 @@
   var name = CHILD.name;
   window.APP_BRAND = {
     name: name,
-    title: CHILD.title || (name + ' 📔 AI 일기'),
+    title: CHILD.title || (name + ' · 일기'),
     userLabel: CHILD.userLabel || (name + ' 사용자'),
     sheetTitle: CHILD.sheetTitle || (name + ' 일기 DB'),
     photoFolder: CHILD.photoFolder || (name + ' 일기 사진'),

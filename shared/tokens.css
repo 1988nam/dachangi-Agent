@@ -1,0 +1,15 @@
+﻿/* Shared palette and legacy aliases. */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
+:root{color-scheme:light;--font-ui:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;--canvas:#f7f8f6;--surface:#fff;--surface-subtle:#f0f3ee;--surface-hover:#e8ede7;--ink:#25342d;--ink-soft:#4f6056;--ink-muted:#647267;--line:#dbe2d9;--line-strong:#a3b1a5;--brand:#38634b;--accent-soft:#e5eee5;--success:#276447;--danger:#b03939;--warning:#835c16;--shell-h:64px;--sidebar-w:224px;--topbar-h:76px;--bg:var(--canvas);--bg-base:var(--canvas);--bg-primary:var(--canvas);--bg-surface:var(--surface);--bg-secondary:var(--surface);--bg-elevated:var(--surface-subtle);--bg-hover:var(--surface-hover);--bg-sidebar:var(--surface-subtle);--text-primary:var(--ink);--text-secondary:var(--ink-soft);--text-muted:var(--ink-muted);--border:var(--line);--border-hover:var(--line-strong);--glass-bg:var(--surface);--glass-border:var(--line);--glass-blur:0px;--accent:var(--brand);--accent2:var(--brand);--accent-purple:var(--brand);--accent-blue:#315f87;--accent-green:var(--success);--accent-red:var(--danger);--accent-orange:var(--warning);--green:var(--success);--red:var(--danger);--amber:var(--warning);--color-primary:var(--brand);--color-secondary:var(--success);--color-warning:var(--warning);--color-danger:var(--danger);--color-success:var(--success);--color-income:var(--success);--color-expense:var(--danger);--accent-purple-glow:#38634b12;--accent-green-glow:#27644712;--accent-blue-glow:#315f8712;--accent-orange-glow:#835c1612;--radius:8px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-xl:12px;--shadow-sm:0 1px 3px #25342d05;--shadow-md:0 4px 20px #25342d06;--shadow-lg:0 12px 36px #25342d12;--shadow-glow-primary:none}
+body[data-agent=toochangi]{--brand:#315f87;--accent-soft:#e7eef5}
+body[data-agent=gachangi]{--brand:#306749;--accent-soft:#e5eee5}
+body[data-agent=dachangi]{--brand:#88563d;--accent-soft:#f3eae2}
+*,*::before,*::after{box-sizing:border-box}
+html,body{font-family:var(--font-ui);font-size:15px;line-height:1.6;background:var(--canvas);color:var(--ink);-webkit-font-smoothing:antialiased}
+body{margin:0;min-height:100dvh}
+button,input,select,textarea{font-family:var(--font-ui)!important}
+input,select,textarea{caret-color:var(--brand)}
+::selection{background:var(--accent-soft);color:var(--ink)}
+:focus-visible{outline:2px solid var(--brand)!important;outline-offset:3px!important}
+:is(h1,h2,h3){text-wrap:balance;word-break:keep-all}
+button,a,input,select,textarea{touch-action:manipulation}
