@@ -148,5 +148,9 @@ const PeopleStore = (() => {
     return people.filter(p => p.photo && p.name).map(p => ({ name: p.name, relation: p.relation, group: p.group, memo: p.memo, callAs: _callAs(p), mime: 'image/jpeg', data: p.photo }));
   }
 
-  return { THRESHOLD, GROUPS, loadPeople, addPerson, addObservation, incrementSighting, updatePerson, setGroup, deleteByRow, loadForPrompt, loadAllFaces, countPending };
+  const api = { THRESHOLD, GROUPS, loadPeople, addPerson, addObservation, incrementSighting, updatePerson, setGroup, deleteByRow, loadForPrompt, loadAllFaces, countPending };
+  return window.OlchangiCache ? OlchangiCache.wrap(api,
+    () => ['dachangi-people', DiaryStore.currentSheetId()], ['loadPeople', 'countPending'],
+    ['addPerson', 'addObservation', 'incrementSighting', 'updatePerson', 'setGroup', 'deleteByRow']
+  ) : api;
 })();

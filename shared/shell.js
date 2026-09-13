@@ -38,5 +38,19 @@
     if (target) { target.tabIndex = -1; target.focus(); }
   });
   document.body.prepend(nav); document.body.prepend(skip);
+  if (window.OlchangiCache) {
+    const note = document.createElement('p'); note.id = 'cache-info'; note.setAttribute('role', 'status');
+    note.style.cssText = 'font-size:12px;line-height:1.5;color:var(--ink-muted);margin:8px 0 0';
+    note.textContent = '조회 결과는 최대 2분간 재사용합니다.';
+    const footer = document.querySelector('.sidebar-footer, .side-foot');
+    if (id === 'gachangi' && footer) { footer.style.flexWrap = 'wrap'; note.style.flexBasis = '100%'; }
+    footer?.append(note);
+    let oldest = Date.now();
+    window.addEventListener('olchangi-cache-hit', event => {
+      oldest = Math.min(oldest, event.detail.at);
+      note.textContent = `${new Date(oldest).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 조회 · 최신 내용은 새로고침`;
+    });
+    window.addEventListener('olchangi-cache-clear', () => { oldest = Date.now(); note.textContent = '다음 조회에서 최신 데이터를 가져옵니다.'; });
+  }
   const main = document.querySelector('main'); if (main && !main.id) main.id = 'main-content';
 })();

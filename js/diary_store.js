@@ -267,7 +267,7 @@ const DiaryStore = (() => {
   }
 
   // 모든 쓰기는 직렬화 큐를 거친다 — 자동 저장 vs 💾 수동 저장 동시 실행 등으로 인한 중복 행 방지
-  return {
+  const api = {
     ensureSheet, loadEntries, currentSheetId, isHandwritten,
     saveEntry: (entry) => _serial(() => _saveEntryImpl(entry)),
     bulkAppend: (entries) => _serial(() => _bulkAppendImpl(entries)),
@@ -280,4 +280,8 @@ const DiaryStore = (() => {
     updatePhotoOrder: (date, photoIds) => _serial(() => _updatePhotoOrderImpl(date, photoIds)),
     deleteByDate: (date) => _serial(() => _deleteByDateImpl(date)),
   };
+  return window.OlchangiCache ? OlchangiCache.wrap(api,
+    () => ['dachangi', currentSheetId()], ['loadEntries'],
+    Object.keys(api).filter(name => !['ensureSheet', 'loadEntries', 'currentSheetId', 'isHandwritten'].includes(name))
+  ) : api;
 })();
