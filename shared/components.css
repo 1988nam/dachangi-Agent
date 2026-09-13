@@ -11,7 +11,7 @@ body :is(.metric-label,.kpi-label){font-size:13px;font-weight:500;color:var(--in
 body :is(.metric-value,.kpi-value){font-size:27px;font-weight:700;letter-spacing:-.6px;font-variant-numeric:tabular-nums;line-height:1.5;overflow-wrap:anywhere}
 body :is(.metric-sub,.metric-delta,.kpi-sub){font-size:12px;line-height:1.6;color:var(--ink-muted)}
 .kpi-icon{display:none}
-body :is(.btn-primary,.btn-primary-sm,.btn:not(.btn-ghost):not(.btn-danger),.primary){background:var(--brand);color:#fff;border:1px solid var(--brand);box-shadow:none;border-radius:6px;min-height:44px;padding:10px 16px;font-size:14px;font-weight:600;line-height:1.5;transition:background .16s,border-color .16s}
+body :is(.btn-primary,.btn-primary-sm,.btn:not(.btn-ghost):not(.btn-danger),.primary){background:var(--brand);color:var(--on-accent);border:1px solid var(--brand);box-shadow:none;border-radius:6px;min-height:44px;padding:10px 16px;font-size:14px;font-weight:600;line-height:1.5;transition:background .16s,border-color .16s}
 body :is(.btn-primary,.btn-primary-sm,.btn:not(.btn-ghost):not(.btn-danger),.primary):hover{filter:brightness(.92);box-shadow:none;transform:none}
 body :is(.btn-secondary,.btn-ghost,.quiet){background:var(--surface);border:1px solid var(--line-strong);color:var(--ink-soft);border-radius:6px;min-height:44px;padding:10px 16px;font-size:14px;font-weight:500;box-shadow:none;transition:background .16s}
 body :is(.btn-secondary,.btn-ghost,.quiet):hover{background:var(--surface-subtle);color:var(--ink)}
@@ -36,13 +36,13 @@ body :is(tr:hover td,.data-table tr:hover td){background:var(--surface-subtle)}
 body .modal-overlay{z-index:3000;background:#18251e66;padding:20px;backdrop-filter:none}
 body :is(.modal,.modal-content){color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:12px;max-height:calc(100dvh - 40px);box-shadow:var(--shadow-lg);animation:none;min-width:0}
 .modal-header{border-color:var(--line)}
-body :is(.toast,#toast){background:var(--ink);color:white;border:1px solid var(--ink);font-size:14px;line-height:1.6;max-width:calc(100vw - 32px);box-shadow:var(--shadow-lg);z-index:10000}
-body #toast.error,body .toast-error{background:var(--danger);color:white;border-color:var(--danger)}
+body :is(.toast,#toast){background:var(--ink);color:var(--on-ink);border:1px solid var(--ink);font-size:14px;line-height:1.6;max-width:calc(100vw - 32px);box-shadow:var(--shadow-lg);z-index:10000}
+body #toast.error,body .toast-error{background:var(--danger);color:var(--on-accent);border-color:var(--danger)}
 body :is(.income,.positive,.text-green){color:var(--success)}
 body :is(.expense,.negative,.text-red){color:var(--danger)}
 body :is(.month-item,.date-item){min-height:40px;color:var(--ink-soft)}
 body .cal-cell.has{background:var(--accent-soft);color:var(--brand);border-color:var(--line)}
-body .cal-cell.has:hover{background:var(--brand);color:white}
+body .cal-cell.has:hover{background:var(--brand);color:var(--on-accent)}
 .diary-heading{margin:0 0 24px}.diary-heading h1{font-size:26px;letter-spacing:-.8px;margin:0 0 6px}.diary-heading p{margin:0;color:var(--ink-muted);font-size:14px}
 #diary-text{font-family:var(--font-ui);line-height:1.95!important;font-size:16px!important;min-height:300px}
 .diary-help{padding-top:12px;margin-top:12px;border-top:1px solid var(--line)}
@@ -51,3 +51,5 @@ body .cal-cell.has:hover{background:var(--brand);color:white}
 @media(max-width:1100px){.metrics-grid,.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:860px){body :is(input,select,textarea):not([type=checkbox]):not([type=radio]):not([type=range]){font-size:16px}.charts-grid{grid-template-columns:1fr}.row{flex-wrap:wrap}.field{max-width:100%;min-width:0!important}body :is(.metric-card,.kpi-card){padding:16px}body :is(.metric-value,.kpi-value){font-size:23px}body .modal-overlay{padding:12px}body :is(.modal,.modal-content){max-height:calc(100dvh - 24px);width:100%;padding:20px}.modal-actions{flex-wrap:wrap}.filter-bar{flex-wrap:wrap;gap:12px}body[data-agent=dachangi] .row>.field{flex:1 1 180px}body[data-agent=dachangi] .row>button{flex:1 1 140px}}
 @media(max-width:480px){.metrics-grid,.kpi-grid{grid-template-columns:minmax(0,1fr)!important}.form-row{grid-template-columns:1fr!important}}
+
+body .budget-bar-amounts>span{color:var(--ink-muted)!important}
