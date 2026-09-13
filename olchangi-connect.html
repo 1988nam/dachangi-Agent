@@ -1,0 +1,41 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>올챙이 Agent 연결</title><style>body{font:15px/1.8 system-ui,sans-serif;background:#f5f7f1;color:#28432e;max-width:440px;margin:12vh auto;padding:25px}h1{font-size:27px}button{background:#49694d;color:white;border:0;border-radius:8px;padding:13px 22px;cursor:pointer;font:inherit}button:disabled{opacity:.5}p{color:#718269}</style></head><body><h1>◕ 올챙이 Agent 연결</h1><p id="description"></p><button id="connect" disabled>연결 준비 중</button><p id="result" role="status"></p><script>window.OLCHANGI_CONNECT_CONFIG={"clientId":"","agent":"dachangi"};</script><script>(() => {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const origin = params.get('origin'), state = params.get('state'), mode = params.get('mode');
+  const allowed = new Set(['https://olchangi.pages.dev', 'https://toochangi.pages.dev', 'https://gachangi.pages.dev', 'https://dachangi.pages.dev', 'http://localhost:8788', 'http://127.0.0.1:8788']);
+  const button = document.querySelector('#connect'), result = document.querySelector('#result');
+  const { agent } = window.OLCHANGI_CONNECT_CONFIG;
+  const configKey = { toochangi: 'toochangi_config_overrides', gachangi: 'gachangi_config', dachangi: 'dachangi_config' }[agent];
+  let existing = {}; try { existing = JSON.parse(localStorage.getItem(configKey)) || {}; } catch {}
+  const clientId = existing.CLIENT_ID || window.OLCHANGI_CONNECT_CONFIG.clientId;
+  if (!allowed.has(origin) || !state || !window.opener || !['login', 'settings'].includes(mode)) { result.textContent = '올챙이 Agent에서 연결을 시작해 주세요.'; return; }
+  const names = { toochangi: '투챙이', gachangi: '가챙이', dachangi: '다챙이' };
+  function send(value, error) { window.opener.postMessage({ type: 'olchangi-connect', state, value, error }, origin); }
+  document.querySelector('#description').textContent = mode === 'login' ? '기존 Google 연결을 사용해 올챙이의 투자 · 가계부 · 일기에 로그인합니다.' : `${names[agent]}의 이 브라우저에 저장된 설정을 올챙이 Agent로 가져옵니다. API 키와 시트·폴더 연결도 함께 옮깁니다.`;
+  let tokenClient;
+  window.bridgeReady = () => {
+    if (mode === 'login') {
+      if (!clientId || !clientId.endsWith('.apps.googleusercontent.com')) { result.textContent = '기존 투챙이의 설정에서 Google CLIENT_ID를 먼저 저장해 주세요.'; button.textContent = '기존 설정 필요'; return; }
+      const allowedScopes = new Set(['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/photospicker.mediaitems.readonly', 'https://www.googleapis.com/auth/generative-language', 'https://www.googleapis.com/auth/generative-language.retriever', 'https://www.googleapis.com/auth/cloud-platform']);
+      const requested = (params.get('scopes') || '').split(/\s+/).filter(s => allowedScopes.has(s));
+      if (!requested.length) { result.textContent = '로그인 권한이 지정되지 않았습니다.'; return; }
+      tokenClient = google.accounts.oauth2.initTokenClient({ client_id: clientId, scope: [...new Set(requested)].join(' '),
+        callback(response) { if (response.error) { result.textContent = response.error; button.disabled = false; return; } send({ access_token: response.access_token, scope: response.scope || requested.join(' '), clientId, expiresAt: Date.now() + (response.expires_in || 3600) * 1000 }); },
+        error_callback(error) { result.textContent = `Google 연결 실패: ${error.type || '다시 시도해 주세요.'}`; button.disabled = false; },
+      });
+    }
+    button.textContent = mode === 'login' ? 'Google 계정으로 연결' : '설정 가져오기'; button.disabled = false;
+  };
+  button.addEventListener('click', () => {
+    if (mode === 'login') { button.disabled = true; tokenClient.requestAccessToken({ prompt: '' }); }
+    else {
+      const values = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith(`${agent}_`) && !/token|access_token/i.test(key)) values[key] = localStorage.getItem(key);
+      }
+      send(values);
+    }
+  });
+  if (mode === 'settings') window.bridgeReady();
+})();
+</script><script src="https://accounts.google.com/gsi/client" onload="window.bridgeReady()" onerror="document.getElementById('result').textContent='Google 로그인 모듈을 불러오지 못했습니다.'"></script></body></html>
