@@ -316,7 +316,7 @@ function _enterEditMode(item, date) {
         </div>
         <div class="field" style="flex:1; min-width:200px;">
           <label style="font-size:12px; color:var(--text-muted);">키워드 (선택 — 잘못된 맥락 교정)</label>
-          <input type="text" class="hist-keywords" placeholder="예: 회사 워크샵 (친구 모임 아님)" />
+          <input type="text" class="hist-keywords" name="diary-rewrite-context-keywords" autocomplete="off" placeholder="예: 회사 워크샵 (친구 모임 아님)" />
         </div>
         <button class="btn btn-ghost hist-rewrite" style="padding:6px 12px;">🔄 AI로 다시 쓰기</button>
       </div>
@@ -432,7 +432,7 @@ async function _rewriteInEdit(item) {
   const area = item.querySelector('.hist-edit-area'); if (!area) return;
   const styleKey = (item.querySelector('.hist-style') || {}).value || '';
   const toneKey = (item.querySelector('.hist-tone') || {}).value || '';
-  const keywords = ((item.querySelector('.hist-keywords') || {}).value || '').trim();
+  const keywords = _readKeywordField(item.querySelector('.hist-keywords'));
   if (!styleKey && !toneKey && !keywords) { showToast('바꿀 문체/어투를 고르거나 키워드를 입력하세요.', 'error'); return; }
   if (!area.value.trim()) { showToast('다시 쓸 내용이 없습니다.', 'error'); return; }
   // 문체 예시 로드(단건 생성의 _resolveStyle과 동일 규칙):
@@ -759,10 +759,26 @@ function _restoreStylePref() {
   _syncCustomStyleField();
 }
 
-function _keywordsFromUI() {
-  const el = document.getElementById('diary-keywords');
-  return el ? el.value.trim() : '';
+function _readKeywordField(el) {
+  if (!el) return '';
+  // An OAuth client identifier is configuration, never diary context. Some browsers
+  // restore/autofill text fields even when autocomplete is off; guard the send path too.
+  const raw = el.value || '';
+  const cleaned = raw.replace(/\b\d+-[a-z0-9_-]+\.apps\.googleusercontent\.com\b/gi, '');
+  if (cleaned !== raw) el.value = cleaned.trim();
+  return cleaned.trim();
 }
+function _keywordsFromUI() { return _readKeywordField(document.getElementById('diary-keywords')); }
+function _cleanRestoredKeywords() {
+  document.querySelectorAll('#diary-keywords, #batch-keywords, .hist-keywords').forEach(_readKeywordField);
+}
+window.addEventListener('pageshow', _cleanRestoredKeywords);
+document.addEventListener('input', event => {
+  if (event.target.matches?.('#diary-keywords, #batch-keywords, .hist-keywords')) _readKeywordField(event.target);
+});
+document.addEventListener('change', event => {
+  if (event.target.matches?.('#diary-keywords, #batch-keywords, .hist-keywords')) _readKeywordField(event.target);
+});
 
 function _runFromUI() {
   DiaryAgent.run({
@@ -788,13 +804,14 @@ function _runBatchFromUI() {
     candCount: parseInt(document.getElementById('cand-count').value, 10) || 10,
     topCount: parseInt(document.getElementById('top-count').value, 10) || 3,
     style: _styleFromUI(),
-    keywords: (document.getElementById('batch-keywords') || {}).value || '',
+    keywords: _readKeywordField(document.getElementById('batch-keywords')),
     startDate: (document.getElementById('batch-start') || {}).value,
     endDate: (document.getElementById('batch-end') || {}).value,
   });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  _cleanRestoredKeywords();
   // 날짜 기본값: 어제
   const dateEl = document.getElementById('diary-date');
   if (dateEl) dateEl.value = _todayMinus(1);

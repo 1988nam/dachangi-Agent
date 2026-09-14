@@ -86,8 +86,8 @@
             </div>
             <div class="row" style="margin-top:10px;">
               <div class="field" style="flex:1; min-width:260px;">
-                <label>키워드 (선택 — 그날의 맥락을 알려주면 AI가 사진을 더 정확히 해석해요)</label>
-                <input type="text" id="diary-keywords" placeholder="예: 회사 워크샵, 캠핑, 양평 (쉼표로 구분)" />
+                <label for="diary-keywords">키워드 (선택 — 그날의 맥락을 알려주면 AI가 사진을 더 정확히 해석해요)</label>
+                <input type="text" id="diary-keywords" name="diary-context-keywords" autocomplete="off" placeholder="예: 회사 워크샵, 캠핑, 양평 (쉼표로 구분)" />
               </div>
             </div>
             <div class="row" style="margin-top:10px;">
@@ -135,7 +135,7 @@
             </div>
             <div class="field" style="margin-top:10px;">
               <label>키워드 (선택 — 한 줄에 하나씩. 그냥 쓰면 모든 날짜 공통, 「날짜: 키워드」로 쓰면 그날에만 적용)</label>
-              <textarea id="batch-keywords" style="width:100%; min-height:64px;" placeholder="가족 여행 (모든 날짜 공통)&#10;2026-06-10: 회사 워크샵, 캠핑&#10;2026-06-11: 워크샵 둘째 날, 귀가"></textarea>
+              <textarea id="batch-keywords" name="diary-batch-context-keywords" autocomplete="off" style="width:100%; min-height:64px;" placeholder="가족 여행 (모든 날짜 공통)&#10;2026-06-10: 회사 워크샵, 캠핑&#10;2026-06-11: 워크샵 둘째 날, 귀가"></textarea>
             </div>
             <button id="batch-btn" class="btn" style="margin-top:12px;"> 여러 날 일기 만들기</button>
             <div id="batch-progress" style="margin-top:10px;"></div>
@@ -204,7 +204,7 @@
   <div id="config-modal" class="modal-overlay hidden">
     <div class="modal">
       <h3> API 연동 설정</h3>
-      <div class="field"><label>Google CLIENT_ID</label><input type="text" id="cfg-client-id" placeholder="...apps.googleusercontent.com" /></div>
+      <div class="field"><label for="cfg-client-id">Google CLIENT_ID</label><input type="text" id="cfg-client-id" name="google-oauth-client-id" autocomplete="off" placeholder="...apps.googleusercontent.com" /></div>
       <div class="field"><label>Google API Key</label><input type="password" id="cfg-api-key" placeholder="AIza..." /></div>
       <div class="field"><label>Gemini API Key <span style="color:var(--text-muted); font-size:11px;">(OAuth 사용 시 비워도 됨)</span></label><input type="password" id="cfg-gemini-key" placeholder="AI Studio 발급 키" /></div>
       <div class="field">
