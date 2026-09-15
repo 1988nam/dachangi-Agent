@@ -81,7 +81,7 @@
                   <input type="number" aria-label="일기에 넣을 사진 수" id="top-count" value="3" min="1" max="3" style="width:80px;" title="일기에 넣을 사진 수 (1~3장). 대표 사진 포함." />
                 </div>
               </div>
-              <button id="generate-btn" class="btn"> AI 일기 생성</button>
+              <button id="pick-photos-btn" class="btn"> 사진 선택</button>
               <button id="manual-btn" class="btn btn-ghost" title="Gemini 없이, 사진만 고르고 일기는 직접 작성합니다"> 직접 쓰기</button>
             </div>
             <div class="row" style="margin-top:10px;">
@@ -119,6 +119,10 @@
                 <label>나만의 문체 설명</label>
                 <input type="text" id="style-custom" placeholder="예: 무라카미 하루키처럼 담담하고 건조하게" />
               </div>
+            </div>
+            <div class="row" style="margin-top:10px;">
+              <button id="generate-btn" class="btn" disabled> 일기 생성</button>
+              <span id="selected-photos-status" class="hint" role="status">먼저 사진을 선택해 주세요.</span>
             </div>
             <details class="diary-help"><summary>문체와 어투를 고르는 방법</summary><div class="hint">문체·어투·키워드를 바꾸고 <b> 다시 생성</b>을 누르면, 사진을 다시 고르지 않고 같은 사진으로 새 일기를 써줍니다. <b> 정현체</b>는 <b>직접 쓴 일기( 수동 작성 + 2024년 이전 옛 일기)</b>의 문체·어투를 학습해 똑같이 써줘요. <b>문체·어투를 각각 정현체로 고를 수 있고</b>, 어느 쪽을 골라도 본인 말투를 따라 씁니다(학습할 일기가 없으면 기본 예시 사용). <b> 내 일기 문체</b>는 저장된 최근 일기 전반의 말투를 따라 씁니다.</div></details>
             <div class="hint" id="folder-hint" style="margin-top:10px;"></div>

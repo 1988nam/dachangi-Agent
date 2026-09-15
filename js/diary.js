@@ -5,6 +5,17 @@
 const DiaryAgent = (() => {
   let _busy = false;
   let _last = null; // { dateStr, topImages:[{mime,data,name,id}], diary }
+  let _staged = null; // 사진 선택과 일기 생성을 분리해 그 사이에 키워드를 입력할 수 있게 한다.
+
+  function _syncStagedUI() {
+    const button = document.getElementById('generate-btn');
+    const status = document.getElementById('selected-photos-status');
+    if (button) button.disabled = _busy || !_staged;
+    if (status) status.textContent = _staged
+      ? `${_staged.dateStr} 사진 ${_staged.candImages.length}장 선택됨 · 키워드 입력 후 일기 생성을 눌러주세요.`
+      : '먼저 사진을 선택해 주세요.';
+  }
+  function clearStaged() { _staged = null; _syncStagedUI(); }
 
   function _progressEl() { return document.getElementById('progress'); }
   function _clearProgress() { const el = _progressEl(); if (el) el.innerHTML = ''; }
@@ -154,13 +165,61 @@ const DiaryAgent = (() => {
   }
   function failLog() { try { return JSON.parse(localStorage.getItem(FAIL_LOG_KEY) || '[]'); } catch (_) { return []; } }
 
+  async function stagePhotos(opts) {
+    if (_busy) return;
+    const cfg = window.DACHANGI_CONFIG || {};
+    let dateStr = opts.dateStr;
+    const candCount = Math.max(3, Math.min(20, opts.candCount || 10));
+    const topCount = Math.max(1, Math.min(3, opts.topCount || 3));
+    const source = cfg.PHOTO_SOURCE || 'photos';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { showToast('날짜를 선택하세요.', 'error'); return; }
+    _busy = true; clearStaged(); _clearProgress();
+    const pickBtn = document.getElementById('pick-photos-btn');
+    const manualBtn = document.getElementById('manual-btn');
+    if (pickBtn) pickBtn.disabled = true;
+    if (manualBtn) manualBtn.disabled = true;
+    try {
+      if (source !== 'photos') { try { if (Auth.ensureFreshToken) await Auth.ensureFreshToken(10 * 60 * 1000); } catch (_) {} }
+      const candImages = source === 'photos'
+        ? await _gatherFromPhotos(cfg, candCount, dateStr)
+        : await _gatherFromDrive(cfg, dateStr, candCount);
+      if (!candImages) return;
+      if (source === 'photos') {
+        const counts = {};
+        candImages.forEach(im => { const d = _localDateFromIso(im.createTime); if (d) counts[d] = (counts[d] || 0) + 1; });
+        const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+        if (top && top[0] !== dateStr) {
+          const [photoDate, n] = top;
+          if (confirm(`고른 사진 ${candImages.length}장 중 ${n}장이 ${photoDate} 촬영입니다.\n(선택한 날짜: ${dateStr})\n\n[확인] ${photoDate} 일기로 작성 / [취소] ${dateStr} 그대로`)) {
+            dateStr = photoDate;
+            const dateEl = document.getElementById('diary-date'); if (dateEl) dateEl.value = dateStr;
+          }
+        }
+      }
+      _staged = { dateStr, candImages, source, candCount, topCount };
+      const done = _step('사진 선택 완료', false); _done(done, `사진 ${candImages.length}장 선택 완료 — 키워드 입력 후 일기 생성을 눌러주세요`);
+      showToast(`사진 ${candImages.length}장을 선택했습니다. 키워드 입력 후 일기를 생성하세요.`);
+    } catch (e) {
+      _logFail('사진선택', `${dateStr}: ${e.message || e}`);
+      console.error('[Diary] 사진 선택 실패:', e);
+      showToast('❌ 사진 선택 실패: ' + (e.message || e), 'error');
+    } finally {
+      _busy = false;
+      if (pickBtn) pickBtn.disabled = false;
+      if (manualBtn) manualBtn.disabled = false;
+      _syncStagedUI();
+    }
+  }
+
   async function run(opts) {
     if (_busy) return;
     const cfg = window.DACHANGI_CONFIG || {};
-    let dateStr = opts.dateStr; // 촬영일 자동 감지로 도중에 교정될 수 있음
-    const candCount = Math.max(3, Math.min(20, opts.candCount || 10));
-    const topCount = Math.max(1, Math.min(5, opts.topCount || 3));
-    const source = cfg.PHOTO_SOURCE || 'photos';
+    let dateStr = opts.dateStr;
+    const staged = _staged;
+    if (!staged || staged.dateStr !== dateStr) { showToast('먼저 해당 날짜의 사진을 선택해 주세요.', 'error'); clearStaged(); return; }
+    const topCount = staged.topCount;
+    const source = staged.source;
+    const candImages = staged.candImages;
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { showToast('날짜를 선택하세요.', 'error'); return; }
 
@@ -171,36 +230,12 @@ const DiaryAgent = (() => {
     const restoreCard = () => { if (_last) { const rc = document.getElementById('result-card'); if (rc) rc.style.display = 'block'; } };
     const genBtn = document.getElementById('generate-btn');
     if (genBtn) { genBtn.disabled = true; }
+    const pickBtnR = document.getElementById('pick-photos-btn');
+    if (pickBtnR) pickBtnR.disabled = true;
     const manualBtnR = document.getElementById('manual-btn');
     if (manualBtnR) { manualBtnR.disabled = true; }
 
     try {
-      // 파이프라인이 수 분 걸릴 수 있어, 토큰 잔여 수명이 짧으면 클릭 제스처 안에서 선제 갱신.
-      //  단 photos 소스는 갱신 팝업이 포토 선택 팝업의 제스처를 소모해 차단시키므로 건너뛴다
-      //  (포토 흐름 중 401은 photos_picker가 중단 처리하고, 이후 Drive/Sheets 호출은 _req가 401 자동 재시도).
-      if (source !== 'photos') { try { if (Auth.ensureFreshToken) await Auth.ensureFreshToken(10 * 60 * 1000); } catch (_) {} }
-
-      const candImages = source === 'photos'
-        ? await _gatherFromPhotos(cfg, candCount, dateStr)
-        : await _gatherFromDrive(cfg, dateStr, candCount);
-      if (!candImages) { restoreCard(); return; }
-
-      // 촬영일 자동 감지(포토 소스 전용): 고른 사진들의 실제 촬영일이 선택한 날짜와 다르면 교정 제안.
-      //  사진을 보고서야 날짜를 깨닫는 경우, 잘못된 날짜로 자동 저장되기 전에 잡는다.
-      if (source === 'photos') {
-        const counts = {};
-        candImages.forEach(im => { const d = _localDateFromIso(im.createTime); if (d) counts[d] = (counts[d] || 0) + 1; });
-        const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-        if (top && top[0] !== dateStr) {
-          const [photoDate, n] = top;
-          if (confirm(`고른 사진 ${candImages.length}장 중 ${n}장이 ${photoDate} 촬영입니다.\n(선택한 날짜: ${dateStr})\n\n[확인] ${photoDate} 일기로 작성 / [취소] ${dateStr} 그대로`)) {
-            dateStr = photoDate;
-            const dEl = document.getElementById('diary-date'); if (dEl) dEl.value = dateStr;
-            showToast(`작성 날짜를 촬영일(${dateStr})로 바꿨어요.`);
-          }
-        }
-      }
-
       let s = _step('🤖 Gemini로 대표 사진 랭킹 중...', true);
       const rankRes = await GeminiAPI.rankPhotos(candImages, topCount);
       // 1-based → 후보 인덱스 매핑 (중복 번호 응답 방어)
@@ -293,6 +328,7 @@ const DiaryAgent = (() => {
         _done(s, '시트에 자동 저장 완료');
         if (typeof renderMonthList === 'function') renderMonthList();
         showToast('✅ 일기 생성 + 자동 저장 완료!');
+        clearStaged();
         // 인물 대조·감지(비차단). 처리 완료를 표시해, 이후 이 일기를 '수동'으로 바꿔 💾(finalize)해도 중복 카운트되지 않게 한다.
         if (_last) _last._facesProcessed = true;
         try { await _processFaces(topImages); } catch (_) {}
@@ -310,7 +346,8 @@ const DiaryAgent = (() => {
       restoreCard();
     } finally {
       _busy = false;
-      const b = document.getElementById('generate-btn'); if (b) b.disabled = false;
+      if (pickBtnR) pickBtnR.disabled = false;
+      _syncStagedUI();
       const mb = document.getElementById('manual-btn'); if (mb) mb.disabled = false;
     }
   }
@@ -320,6 +357,7 @@ const DiaryAgent = (() => {
   //  💾로 저장(자동 저장하지 않음). 저장된 일기는 '수동'으로 표기되고, 사람 감지는 저장 시 동작.
   async function runManual(opts) {
     if (_busy) return;
+    clearStaged();
     const cfg = window.DACHANGI_CONFIG || {};
     let dateStr = opts.dateStr; // 촬영일 자동 감지로 교정될 수 있음
     const candCount = Math.max(3, Math.min(20, opts.candCount || 10));
@@ -376,7 +414,7 @@ const DiaryAgent = (() => {
       restoreCard();
     } finally {
       _busy = false;
-      if (genBtn) genBtn.disabled = false;
+      _syncStagedUI();
       if (manualBtn) manualBtn.disabled = false;
     }
   }
@@ -657,7 +695,7 @@ const DiaryAgent = (() => {
       showToast('❌ 재생성 실패: ' + (e.message || e), 'error');
     } finally {
       _busy = false;
-      const b = document.getElementById('generate-btn'); if (b) b.disabled = false;
+      _syncStagedUI();
     }
   }
 
@@ -805,6 +843,7 @@ const DiaryAgent = (() => {
   // 여러 날을 한 번에 — 포토는 다중 선택, 드라이브는 기간. 이미 일기가 있는 날은 건너뜀.
   async function runBatch(opts) {
     if (_busy) return;
+    clearStaged();
     const cfg = window.DACHANGI_CONFIG || {};
     const candCount = Math.max(3, Math.min(20, opts.candCount || 10));
     const topCount = Math.max(1, Math.min(5, opts.topCount || 3));
@@ -851,7 +890,7 @@ const DiaryAgent = (() => {
     } finally {
       _busy = false;
       if (btn) btn.disabled = false;
-      if (genBtn) genBtn.disabled = false;
+      _syncStagedUI();
     }
   }
 
@@ -918,5 +957,5 @@ const DiaryAgent = (() => {
     return { ok: true };
   }
 
-  return { run, runManual, runBatch, getLast, setBestIndex, setManual, finalize, regenerateText, onEntryDateChanged, onEntryDeleted, failLog };
+  return { stagePhotos, clearStaged, run, runManual, runBatch, getLast, setBestIndex, setManual, finalize, regenerateText, onEntryDateChanged, onEntryDeleted, failLog };
 })();

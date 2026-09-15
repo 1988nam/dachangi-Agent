@@ -105,7 +105,7 @@ function onLoginSuccess(user) {
   const hint = document.getElementById('folder-hint');
   if (hint) {
     if ((cfg.PHOTO_SOURCE || 'photos') === 'photos') {
-      hint.innerHTML = '📷 <b>구글 포토</b>에서 직접 사진을 골라 일기를 만듭니다. <code>✍️ 일기 생성</code>을 누르면 포토 선택 창이 열립니다(드라이브 설정 불필요).';
+      hint.innerHTML = '📷 먼저 <code>사진 선택</code>으로 사진을 고른 뒤, 키워드·문체·어투를 확인하고 <code>일기 생성</code>을 누르세요.';
     } else {
       hint.innerHTML = cfg.MAIN_PHOTO_FOLDER_ID
         ? `메인 폴더 안의 <code>${'{yyyy-MM}'}</code> 폴더에서 선택한 날짜의 사진을 찾습니다.`
@@ -790,6 +790,14 @@ function _runFromUI() {
   });
 }
 
+function _pickPhotosFromUI() {
+  DiaryAgent.stagePhotos({
+    dateStr: document.getElementById('diary-date').value,
+    candCount: parseInt(document.getElementById('cand-count').value, 10) || 10,
+    topCount: parseInt(document.getElementById('top-count').value, 10) || 3,
+  });
+}
+
 // 수동 작성 — Gemini 없이 사진만 골라 결과 카드를 열고, 본문은 직접 쓴다(문체/키워드 불필요).
 function _runManualFromUI() {
   DiaryAgent.runManual({
@@ -915,8 +923,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const customStyleEl = document.getElementById('style-custom');
   if (customStyleEl) customStyleEl.addEventListener('input', _saveStylePref);
 
-  // 생성
+  // 사진 선택 후 생성 — 키워드를 사진 선택 뒤에도 입력할 수 있도록 두 단계를 분리한다.
+  document.getElementById('pick-photos-btn').addEventListener('click', _pickPhotosFromUI);
   document.getElementById('generate-btn').addEventListener('click', _runFromUI);
+  ['diary-date', 'cand-count', 'top-count'].forEach(id => document.getElementById(id)?.addEventListener('change', () => DiaryAgent.clearStaged()));
   // 직접 쓰기(수동)
   const _manualBtn = document.getElementById('manual-btn');
   if (_manualBtn) _manualBtn.addEventListener('click', _runManualFromUI);
@@ -938,7 +948,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (last && curDate && last.dateStr !== curDate) {
       if (!confirm(`날짜(${curDate})가 직전 생성(${last.dateStr})과 다릅니다.\n${curDate} 사진으로 처음부터 새로 생성할까요?\n(${curDate}에 저장된 일기가 있으면 새 일기로 덮어써집니다)`)) return;
     }
-    _runFromUI();
+    showToast('먼저 사진을 선택한 뒤 일기 생성을 눌러주세요.', 'error');
   });
 
   // 결과 액션
